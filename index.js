@@ -470,40 +470,50 @@ client.on('ready', async () => {
     await checkAndSendSmartReminders();
 });
 
-// Command Listener: Trigger manually via WhatsApp message
-client.on('message_create', async (msg) => {
-    const targetChannelJid = getSanitizedChannelJid();
+const processedMessages = new Set();
+
+async function handleCommand(msg) {
+    if (!msg || !msg.body) return;
+    const msgId = msg.id ? msg.id._serialized : null;
+    if (msgId && processedMessages.has(msgId)) return;
+    if (msgId) {
+        processedMessages.add(msgId);
+        if (processedMessages.size > 200) processedMessages.clear();
+    }
+
     const body = msg.body.trim().toLowerCase();
+    if (!body.startsWith('!')) return;
+
+    const targetChannelJid = getSanitizedChannelJid();
     const isTargetGroup = targetChannelJid && (msg.to === targetChannelJid || msg.from === targetChannelJid);
+
+    console.log(`[Command Received] "${body}" from ${msg.fromMe ? 'Me (Self)' : msg.from}`);
 
     if (msg.fromMe || isTargetGroup) {
         if (body === '!status') {
-            console.log('Status command received, replying...');
+            console.log('Replying to !status command...');
             const info = await getNextGameweekInfo();
             if (info) {
                 const now = new Date();
                 const hKickoff = ((info.firstKickoff - now) / 3600000).toFixed(1);
                 const hDeadline = ((info.deadline - now) / 3600000).toFixed(1);
-                const chat = await msg.getChat();
-                await chat.sendMessage(`🤖 *FPL Broadcaster Status*\n\n• Next: *${info.name}*\n• First Match: *${info.firstMatch}*\n• Kickoff: *${hKickoff} hrs*\n• Deadline: *${hDeadline} hrs*`);
+                await msg.reply(`🤖 *FPL Broadcaster Status*\n\n• Next: *${info.name}*\n• First Match: *${info.firstMatch}*\n• Kickoff: *${hKickoff} hrs*\n• Deadline: *${hDeadline} hrs*`);
             }
         } else if (body === '!preview' || body === '!preview48h') {
-            console.log('Private 48h preview command received, replying to chat...');
+            console.log('Generating private 48h preview...');
             const info = await getNextGameweekInfo();
             if (info) {
-                const chat = await msg.getChat();
-                await chat.sendMessage('⏳ *Generating 48-Hour Preview for you privately...*');
+                await msg.reply('⏳ *Generating 48-Hour Preview for your eyes only...*');
                 const text = await generate48hPreview(info);
-                await chat.sendMessage(text);
+                await msg.reply(text);
             }
         } else if (body === '!preview24h') {
-            console.log('Private 24h deadline preview command received, replying to chat...');
+            console.log('Generating private 24h deadline alert...');
             const info = await getNextGameweekInfo();
             if (info) {
-                const chat = await msg.getChat();
-                await chat.sendMessage('⏳ *Generating 24-Hour Alert for you privately...*');
+                await msg.reply('⏳ *Generating 24-Hour Alert for your eyes only...*');
                 const text = await generate24hDeadlineAlert(info);
-                await chat.sendMessage(text);
+                await msg.reply(text);
             }
         } else if (body === '!48h' || body === '!fixtures') {
             console.log('Manual 48h broadcast command received.');
@@ -516,15 +526,12 @@ client.on('message_create', async (msg) => {
                 const chats = await client.getChats();
                 const groups = chats.filter(c => c.isGroup);
                 const text = groups.map(g => `• *${g.name}*:\n${g.id._serialized}`).join('\n\n');
-                const chat = await msg.getChat();
-                await chat.sendMessage(`📋 *Your WhatsApp Groups & JIDs:*\n\n${text}`);
+                await msg.reply(`📋 *Your WhatsApp Groups & JIDs:*\n\n${text}`);
             } catch (err) {
-                const chat = await msg.getChat();
-                await chat.sendMessage(`Failed to retrieve groups: ${err.message}`);
+                await msg.reply(`Failed to retrieve groups: ${err.message}`);
             }
         } else if (body === '!help' || body === '!commands') {
-            const chat = await msg.getChat();
-            await chat.sendMessage(
+            await msg.reply(
                 `🤖 *FPL Broadcaster Commands:*\n\n` +
                 `• *!status* - Live Gameweek countdown & earliest kickoff\n` +
                 `• *!preview* - Preview 48-hour broadcast privately here\n` +
@@ -535,7 +542,10 @@ client.on('message_create', async (msg) => {
             );
         }
     }
-});
+}
+
+client.on('message_create', handleCommand);
+client.on('message', handleCommand);
 
 // Check every 15 minutes: '*/15 * * * *'
 cron.schedule('*/15 * * * *', async () => {
