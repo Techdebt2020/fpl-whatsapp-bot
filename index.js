@@ -325,6 +325,19 @@ client.on('authenticated', () => {
 // Event: Client is ready
 client.on('ready', async () => {
     console.log('WhatsApp Client is ready!\n');
+
+    // List all groups and their JIDs for easy reference
+    try {
+        const chats = await client.getChats();
+        const groups = chats.filter(c => c.isGroup);
+        console.log('================================================================');
+        console.log('📋 CONNECTED WHATSAPP GROUPS & JIDs:');
+        groups.forEach(g => console.log(`• "${g.name}" -> ${g.id._serialized}`));
+        console.log('================================================================\n');
+    } catch (err) {
+        console.log('Note: Group list could not be fetched:', err.message);
+    }
+
     console.log('Smart Gameweek Tracker initialized:');
     console.log('- 48-Hour Alert: Triggers 48h before the first kickoff of every Gameweek.');
     console.log('- 24-Hour Alert: Triggers 24h before the first kickoff of every Gameweek.');
@@ -337,7 +350,6 @@ client.on('ready', async () => {
 // Command Listener: Trigger manually via WhatsApp message
 client.on('message_create', async (msg) => {
     const targetChannelJid = process.env.TARGET_CHANNEL_JID;
-    const isTargetGroup = msg.to === targetChannelJid || msg.from === targetChannelJid;
     const body = msg.body.trim().toLowerCase();
 
     if (msg.fromMe) {
@@ -354,6 +366,15 @@ client.on('message_create', async (msg) => {
                 const hKickoff = ((info.firstKickoff - now) / 3600000).toFixed(1);
                 const hDeadline = ((info.deadline - now) / 3600000).toFixed(1);
                 await client.sendMessage(msg.to, `🤖 *FPL Broadcaster Status*\n\n• Next: *${info.name}*\n• First Match: *${info.firstMatch}*\n• Kickoff: *${hKickoff} hrs*\n• Deadline: *${hDeadline} hrs*`);
+            }
+        } else if (body === '!groups') {
+            try {
+                const chats = await client.getChats();
+                const groups = chats.filter(c => c.isGroup);
+                const text = groups.map(g => `• *${g.name}*:\n${g.id._serialized}`).join('\n\n');
+                await client.sendMessage(msg.to, `📋 *Your WhatsApp Groups & JIDs:*\n\n${text}`);
+            } catch (err) {
+                await client.sendMessage(msg.to, `Failed to retrieve groups: ${err.message}`);
             }
         }
     }
