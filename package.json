@@ -4,7 +4,8 @@
   "description": "EPL Fixtures Automated WhatsApp Channel Broadcaster",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "login": "node login.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
