@@ -71,33 +71,28 @@ client.on('qr', (qr) => {
 });
 
 client.on('loading_screen', (percent, message) => {
-    console.log(`Syncing WhatsApp: ${percent}%...`);
+    if (percent === 100) {
+        console.log('Syncing WhatsApp: 100%... (Finalizing handshake, please wait ~30-45s, DO NOT press Ctrl+C!)...');
+    } else {
+        console.log(`Syncing WhatsApp: ${percent}%...`);
+    }
 });
 
 client.on('authenticated', () => {
-    console.log('\n✅ Authenticated successfully! Finalizing session save...');
+    console.log('\n✅ Phone accepted QR code! Downloading session keys...');
 });
 
 client.on('ready', async () => {
     console.log('\n================================================================');
     console.log('🎉 SUCCESS! YOUR WHATSAPP ACCOUNT IS PERMANENTLY LINKED!');
     console.log('================================================================');
-    console.log(`• Connected as: ${client.info.pushname || client.info.wid.user}`);
-    
+    console.log('Session is safely saved to .wwebjs_auth/');
+    console.log('Exiting login tool automatically now...');
+    console.log('\n👉 NOW RUN THIS: pm2 restart fpl-whatsapp-bot && pm2 save\n');
+
     try {
-        const chats = await client.getChats();
-        const groups = chats.filter(c => c.isGroup);
-        console.log(`• Found ${groups.length} groups.`);
-        console.log('\nYour Groups & JIDs:');
-        groups.forEach(g => console.log(`  • "${g.name}" -> ${g.id._serialized}`));
+        await client.destroy();
     } catch (e) {}
-
-    console.log('\nSession is safely saved in .wwebjs_auth/');
-    console.log('Closing login tool and exiting...');
-    console.log('\n👉 NEXT STEP: Start the 24/7 bot daemon with:');
-    console.log('   pm2 start index.js --name "fpl-whatsapp-bot" && pm2 save\n');
-
-    await client.destroy();
     process.exit(0);
 });
 
