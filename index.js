@@ -45,7 +45,11 @@ const puppeteerOptions = {
 };
 
 if (isLinux) {
-    puppeteerOptions.executablePath = '/usr/bin/chromium';
+    if (fs.existsSync('/usr/bin/chromium')) {
+        puppeteerOptions.executablePath = '/usr/bin/chromium';
+    } else if (fs.existsSync('/usr/bin/chromium-browser')) {
+        puppeteerOptions.executablePath = '/usr/bin/chromium-browser';
+    }
 }
 
 // Define Client options
