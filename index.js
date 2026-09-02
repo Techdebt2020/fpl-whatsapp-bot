@@ -373,30 +373,35 @@ client.on('ready', async () => {
 client.on('message_create', async (msg) => {
     const targetChannelJid = process.env.TARGET_CHANNEL_JID;
     const body = msg.body.trim().toLowerCase();
+    const isTargetGroup = msg.to === targetChannelJid || msg.from === targetChannelJid;
 
-    if (msg.fromMe) {
-        if (body === '!48h' || body === '!fixtures') {
-            console.log('Manual 48h broadcast command received.');
-            await checkAndSendSmartReminders('48h');
-        } else if (body === '!24h' || body === '!deadline' || body === '!reminder') {
-            console.log('Manual 24h deadline broadcast command received.');
-            await checkAndSendSmartReminders('24h');
-        } else if (body === '!status') {
+    if (msg.fromMe || isTargetGroup) {
+        if (body === '!status') {
+            console.log('Status command received, replying...');
             const info = await getNextGameweekInfo();
             if (info) {
                 const now = new Date();
                 const hKickoff = ((info.firstKickoff - now) / 3600000).toFixed(1);
                 const hDeadline = ((info.deadline - now) / 3600000).toFixed(1);
-                await client.sendMessage(msg.to, `🤖 *FPL Broadcaster Status*\n\n• Next: *${info.name}*\n• First Match: *${info.firstMatch}*\n• Kickoff: *${hKickoff} hrs*\n• Deadline: *${hDeadline} hrs*`);
+                const chat = await msg.getChat();
+                await chat.sendMessage(`🤖 *FPL Broadcaster Status*\n\n• Next: *${info.name}*\n• First Match: *${info.firstMatch}*\n• Kickoff: *${hKickoff} hrs*\n• Deadline: *${hDeadline} hrs*`);
             }
+        } else if (body === '!48h' || body === '!fixtures') {
+            console.log('Manual 48h broadcast command received.');
+            await checkAndSendSmartReminders('48h');
+        } else if (body === '!24h' || body === '!deadline' || body === '!reminder') {
+            console.log('Manual 24h deadline broadcast command received.');
+            await checkAndSendSmartReminders('24h');
         } else if (body === '!groups') {
             try {
                 const chats = await client.getChats();
                 const groups = chats.filter(c => c.isGroup);
                 const text = groups.map(g => `• *${g.name}*:\n${g.id._serialized}`).join('\n\n');
-                await client.sendMessage(msg.to, `📋 *Your WhatsApp Groups & JIDs:*\n\n${text}`);
+                const chat = await msg.getChat();
+                await chat.sendMessage(`📋 *Your WhatsApp Groups & JIDs:*\n\n${text}`);
             } catch (err) {
-                await client.sendMessage(msg.to, `Failed to retrieve groups: ${err.message}`);
+                const chat = await msg.getChat();
+                await chat.sendMessage(`Failed to retrieve groups: ${err.message}`);
             }
         }
     }
