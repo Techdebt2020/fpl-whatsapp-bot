@@ -7,6 +7,25 @@ const path = require('path');
 const os = require('os');
 require('dotenv').config();
 
+// Global handlers for transient Puppeteer navigation events
+process.on('unhandledRejection', (reason, promise) => {
+    const errStr = String(reason || '');
+    if (errStr.includes('Execution context was destroyed') || errStr.includes('Navigation')) {
+        // Harmless transient error during WhatsApp Web page redirection after login
+        return;
+    }
+    console.error('Unhandled Rejection:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+    const errStr = String(err || '');
+    if (errStr.includes('Execution context was destroyed') || errStr.includes('Navigation')) {
+        // Harmless transient error during WhatsApp Web page redirection after login
+        return;
+    }
+    console.error('Uncaught Exception:', err);
+});
+
 // Verify API Key
 const geminiApiKey = process.env.GEMINI_API_KEY;
 if (!geminiApiKey) {
@@ -49,6 +68,8 @@ const clientOptions = {
     authStrategy: new LocalAuth({
         dataPath: './.wwebjs_auth'
     }),
+    takeoverOnConflict: true,
+    takeoverTimeoutMs: 0,
     authTimeoutMs: 120000,
     puppeteer: puppeteerOptions,
     userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
