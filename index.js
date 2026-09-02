@@ -249,26 +249,31 @@ function generateLocal24hAlert(gwInfo) {
 
 // Generate 48-Hour Fixture Preview via Gemini
 async function generate48hPreview(gwInfo) {
-    const deadlineStr = gwInfo.deadline.toUTCString();
-    const kickoffStr = gwInfo.firstKickoff.toUTCString();
+    const deadlineFormatted = formatMultiTimezone(gwInfo.deadline);
+    const kickoffFormatted = formatMultiTimezone(gwInfo.firstKickoff);
+
+    const fixtureListText = (gwInfo.fixtures || []).map(f =>
+        `• ⚽ *${f.home}* vs *${f.away}* - ${formatMultiTimezone(f.kickoff)}`
+    ).join('\n');
 
     const prompt = `You are an elite Premier League broadcast host.
 Today is 48 HOURS before the kickoff of the upcoming ${gwInfo.name}.
-First match: ${gwInfo.firstMatch} (Kickoff: ${kickoffStr}).
-The FPL Team Selection Deadline is: ${deadlineStr} (90 mins before kickoff).
+Opening Match: ${gwInfo.firstMatch} (Kickoff: ${kickoffFormatted}).
+FPL Team Selection Deadline: ${deadlineFormatted} (90 mins before kickoff).
+
+Official Premier League Fixtures for this Gameweek (DO NOT CHANGE OR INVENT MATCHES):
+${fixtureListText}
 
 Generate an exciting, high-energy 48-Hour Match Preview & Fixtures broadcast for WhatsApp.
 
 Requirements:
 1. Catchy headline with emojis: 🚨 *48-HOUR FPL NOTICE: ${gwInfo.name.toUpperCase()} APPROACHING* 🚨
-2. Announce the first match (${gwInfo.firstMatch}) and exact time countdown.
-3. List all Gameweek match pairings grouped by day.
-4. Show kickoff times for each match in UK Time, IST (India), CET (Europe), AST (Qatar/Gulf), and US PST.
-   Format: ⚽ *Arsenal* vs *Chelsea* - *15:00 UK | 19:30 IST | 16:00 CET | 17:00 AST | 07:00 PST*
-5. Highlight 2 big blockbuster clashes to watch and early injury/rotation warnings.
-6. Emphasize the FPL team lock deadline (${deadlineStr}).
-7. Concluding tip to review squad and plan transfers early.
-8. CRITICAL: Use single asterisks (*bold*) for WhatsApp bolding. Never use double asterisks (**). Do not use markdown # headers.`;
+2. Announce the opening match (${gwInfo.firstMatch}) and exact time countdown.
+3. List all the official match pairings provided above with their multi-timezone kickoff times.
+4. Highlight 2 big blockbuster clashes from the schedule (e.g. Everton vs Man Utd, Arsenal vs Chelsea) with tactical talking points.
+5. Emphasize the FPL team lock deadline (${deadlineFormatted}).
+6. Concluding tip to review squad, check injuries, and plan transfers early.
+7. CRITICAL: Use single asterisks (*bold*) for WhatsApp bolding. Never use double asterisks (**). Do not use markdown # headers. Only list the actual matches provided above.`;
 
     const aiText = await callGeminiWithFallback(prompt, true);
     return aiText || generateLocal48hPreview(gwInfo);
@@ -276,23 +281,30 @@ Requirements:
 
 // Generate 24-Hour Final Deadline & Captaincy Alert via Gemini
 async function generate24hDeadlineAlert(gwInfo) {
-    const deadlineStr = gwInfo.deadline.toUTCString();
-    const kickoffStr = gwInfo.firstKickoff.toUTCString();
+    const deadlineFormatted = formatMultiTimezone(gwInfo.deadline);
+    const kickoffFormatted = formatMultiTimezone(gwInfo.firstKickoff);
+
+    const fixtureListText = (gwInfo.fixtures || []).map(f =>
+        `• ⚽ *${f.home}* vs *${f.away}* - ${formatMultiTimezone(f.kickoff)}`
+    ).join('\n');
 
     const prompt = `You are an elite Premier League analyst and fantasy broadcaster.
 Today is exactly 24 HOURS before the kickoff of ${gwInfo.name}!
-First match: ${gwInfo.firstMatch} (Kickoff: ${kickoffStr}).
-THE OFFICIAL FPL DEADLINE IS: ${deadlineStr} (Team lock happens 90 minutes before kickoff).
+Opening match: ${gwInfo.firstMatch} (Kickoff: ${kickoffFormatted}).
+THE OFFICIAL FPL DEADLINE IS: ${deadlineFormatted} (Team lock happens 90 minutes before kickoff).
+
+Official Premier League Fixtures for this Gameweek:
+${fixtureListText}
 
 Generate an urgent, must-read 24-Hour Final Deadline & Captaincy Alert for WhatsApp.
 
 Requirements:
 1. Urgent Headline: ⏳ *FINAL 24-HOUR DEADLINE ALERT: ${gwInfo.name.toUpperCase()}* ⏳
-2. Prominently display the EXACT FPL DEADLINE in multiple timezones (UK, IST, CET, AST, PST).
+2. Prominently display the EXACT FPL DEADLINE (${deadlineFormatted}).
 3. "Captaincy Decision Matrix":
-   - Safe Essential Pick (highest expected returns)
+   - Safe Essential Pick (highest expected returns based on this Gameweek's actual matchups)
    - Differential Captain Pick (<15% ownership) with high upside
-4. Top 3 Transfer Trends & Key Matchups for this round.
+4. Top 3 Transfer Trends & Key Matchups for this round from the official fixtures above.
 5. Final Manager Checklist:
    - [ ] Vice-captain confirmed?
    - [ ] Bench order prioritized?
