@@ -164,13 +164,81 @@ async function getNextGameweekInfo() {
     }
 }
 
+// List of models to try in order of preference
+const FALLBACK_MODELS = [
+    'gemini-2.5-flash',
+    'gemini-flash-latest',
+    'gemini-2.5-flash-lite',
+    'gemini-2.5-pro'
+];
+
+// Helper to call Gemini with automatic model & tool fallback
+async function callGeminiWithFallback(prompt, useSearch = true) {
+    for (const modelName of FALLBACK_MODELS) {
+        // First try with Google Search grounding
+        if (useSearch) {
+            try {
+                const model = genAI.getGenerativeModel({
+                    model: modelName,
+                    tools: [{ googleSearch: {} }]
+                });
+                const res = await model.generateContent(prompt);
+                let text = res.response.text().trim();
+                if (text) {
+                    return text.replace(/^#+\s*(.*)$/gmi, '*$1*').replace(/\*\*/g, '*');
+                }
+            } catch (err) {
+                console.log(`Search-grounded call failed for ${modelName}:`, err.message);
+            }
+        }
+
+        // Fallback: try without search tool
+        try {
+            const model = genAI.getGenerativeModel({ model: modelName });
+            const res = await model.generateContent(prompt);
+            let text = res.response.text().trim();
+            if (text) {
+                return text.replace(/^#+\s*(.*)$/gmi, '*$1*').replace(/\*\*/g, '*');
+            }
+        } catch (err) {
+            console.log(`Standard call failed for ${modelName}:`, err.message);
+        }
+    }
+    return null;
+}
+
+// Local fallback if AI service is completely unreachable
+function generateLocal48hPreview(gwInfo) {
+    const lines = [
+        `🚨 *48-HOUR FPL NOTICE: ${gwInfo.name.toUpperCase()} APPROACHING* 🚨\n`,
+        `⚽ *First Match:* ${gwInfo.firstMatch}`,
+        `⏰ *Kickoff:* ${gwInfo.firstKickoff.toUTCString()}`,
+        `⏳ *FPL Team Lock Deadline:* ${gwInfo.deadline.toUTCString()}\n`,
+        `*MATCH SCHEDULE:*`
+    ];
+    gwInfo.fixtures.forEach(f => {
+        const timeStr = f.kickoff.toUTCString().replace(/:\d\d GMT$/, ' UTC');
+        lines.push(`• ⚽ *${f.home}* vs *${f.away}* - ${timeStr}`);
+    });
+    lines.push(`\nDon't forget to review your squad and confirm captaincy picks!`);
+    return lines.join('\n');
+}
+
+function generateLocal24hAlert(gwInfo) {
+    return `⏳ *FINAL 24-HOUR DEADLINE ALERT: ${gwInfo.name.toUpperCase()}* ⏳\n\n` +
+           `⚽ *Opening Match:* ${gwInfo.firstMatch}\n` +
+           `⏰ *Kickoff:* ${gwInfo.firstKickoff.toUTCString()}\n` +
+           `🔒 *OFFICIAL FPL DEADLINE:* ${gwInfo.deadline.toUTCString()} (Team lock happens 90 mins before kickoff!)\n\n` +
+           `*FINAL MANAGER CHECKLIST:*\n` +
+           `• [ ] Vice-captain confirmed?\n` +
+           `• [ ] Starting XI locked?\n` +
+           `• [ ] Bench order prioritized?\n` +
+           `• [ ] Checked latest press conference injury news?\n\n` +
+           `Lock in your teams before the servers get busy!`;
+}
+
 // Generate 48-Hour Fixture Preview via Gemini
 async function generate48hPreview(gwInfo) {
-    const model = genAI.getGenerativeModel({
-        model: 'gemini-2.5-flash',
-        tools: [{ googleSearch: {} }]
-    });
-
     const deadlineStr = gwInfo.deadline.toUTCString();
     const kickoffStr = gwInfo.firstKickoff.toUTCString();
 
@@ -192,19 +260,12 @@ Requirements:
 7. Concluding tip to review squad and plan transfers early.
 8. CRITICAL: Use single asterisks (*bold*) for WhatsApp bolding. Never use double asterisks (**). Do not use markdown # headers.`;
 
-    const result = await model.generateContent(prompt);
-    let text = result.response.text().trim();
-    text = text.replace(/^#+\s*(.*)$/gmi, '*$1*').replace(/\*\*/g, '*');
-    return text;
+    const aiText = await callGeminiWithFallback(prompt, true);
+    return aiText || generateLocal48hPreview(gwInfo);
 }
 
 // Generate 24-Hour Final Deadline & Captaincy Alert via Gemini
 async function generate24hDeadlineAlert(gwInfo) {
-    const model = genAI.getGenerativeModel({
-        model: 'gemini-2.5-flash',
-        tools: [{ googleSearch: {} }]
-    });
-
     const deadlineStr = gwInfo.deadline.toUTCString();
     const kickoffStr = gwInfo.firstKickoff.toUTCString();
 
@@ -230,94 +291,112 @@ Requirements:
 6. High energy closing call: "Lock in your teams before the servers get busy!"
 7. CRITICAL: Use single asterisks (*bold*) for WhatsApp. Never use double asterisks (**). No markdown # headers.`;
 
-    const result = await model.generateContent(prompt);
-    let text = result.response.text().trim();
-    text = text.replace(/^#+\s*(.*)$/gmi, '*$1*').replace(/\*\*/g, '*');
-    return text;
+    const aiText = await callGeminiWithFallback(prompt, true);
+    return aiText || generateLocal24hAlert(gwInfo);
 }
+
+function getSanitizedChannelJid() {
+    let jid = (process.env.TARGET_CHANNEL_JID || '').trim().replace(/['"]/g, '');
+    if (jid && !jid.includes('@')) {
+        jid += '@g.us';
+    }
+    return jid;
+}
+
+let isCheckingSchedule = false;
 
 // Smart Scheduler: Checks every 15 minutes for 48h and 24h thresholds
 async function checkAndSendSmartReminders(forcedType = null) {
-    const targetChannelJid = process.env.TARGET_CHANNEL_JID;
-    if (!targetChannelJid) {
-        console.error('TARGET_CHANNEL_JID is not configured in .env.');
+    if (isCheckingSchedule && !forcedType) {
+        console.log('Schedule check already running, skipping duplicate.');
         return false;
     }
+    isCheckingSchedule = true;
 
-    const gwInfo = await getNextGameweekInfo();
-    if (!gwInfo) {
-        console.log('No upcoming Gameweek found.');
-        return false;
-    }
-
-    const now = new Date();
-    const hoursToKickoff = (gwInfo.firstKickoff.getTime() - now.getTime()) / (1000 * 60 * 60);
-    const hoursToDeadline = (gwInfo.deadline.getTime() - now.getTime()) / (1000 * 60 * 60);
-
-    console.log(`\n-----------------------------------------------------------`);
-    console.log(`[GW Tracker] ${gwInfo.name} | First Game: ${gwInfo.firstMatch}`);
-    console.log(`[GW Tracker] Kickoff: ${gwInfo.firstKickoff.toISOString()} (in ${hoursToKickoff.toFixed(1)} hrs)`);
-    console.log(`[GW Tracker] FPL Deadline: ${gwInfo.deadline.toISOString()} (in ${hoursToDeadline.toFixed(1)} hrs)`);
-    console.log(`-----------------------------------------------------------\n`);
-
-    const state = loadAlertState();
-    const key48h = `gw${gwInfo.id}_48h`;
-    const key24h = `gw${gwInfo.id}_24h`;
-
-    // Forced manual triggers
-    if (forcedType === '48h' || forcedType === 'fixtures') {
-        console.log(`Triggering manual 48-Hour Preview for ${gwInfo.name}...`);
-        const text = await generate48hPreview(gwInfo);
-        await client.sendMessage(targetChannelJid, text);
-        console.log('48h preview sent!');
-        return true;
-    }
-
-    if (forcedType === '24h' || forcedType === 'deadline') {
-        console.log(`Triggering manual 24-Hour Deadline Alert for ${gwInfo.name}...`);
-        const text = await generate24hDeadlineAlert(gwInfo);
-        await client.sendMessage(targetChannelJid, text);
-        console.log('24h deadline alert sent!');
-        return true;
-    }
-
-    // 48-Hour Automatic Alert: Triggers when <= 48h and > 24h
-    if (hoursToKickoff <= 48 && hoursToKickoff > 24) {
-        if (!state.sentAlerts[key48h]) {
-            console.log(`>>> Sending AUTOMATIC 48-Hour Alert for ${gwInfo.name}...`);
-            try {
-                const text = await generate48hPreview(gwInfo);
-                await client.sendMessage(targetChannelJid, text);
-                state.sentAlerts[key48h] = new Date().toISOString();
-                saveAlertState(state);
-                console.log(`Successfully sent 48h alert for ${gwInfo.name}!`);
-            } catch (err) {
-                console.error(`Failed to send 48h alert:`, err.message);
-            }
-        } else {
-            console.log(`[Tracker] 48h alert already delivered for ${gwInfo.name}.`);
+    try {
+        const targetChannelJid = getSanitizedChannelJid();
+        if (!targetChannelJid) {
+            console.error('TARGET_CHANNEL_JID is not configured in .env.');
+            return false;
         }
-    }
 
-    // 24-Hour Automatic Alert: Triggers when <= 24h and > 0h
-    if (hoursToKickoff <= 24 && hoursToKickoff > 0) {
-        if (!state.sentAlerts[key24h]) {
-            console.log(`>>> Sending AUTOMATIC 24-Hour Deadline Alert for ${gwInfo.name}...`);
-            try {
-                const text = await generate24hDeadlineAlert(gwInfo);
-                await client.sendMessage(targetChannelJid, text);
-                state.sentAlerts[key24h] = new Date().toISOString();
-                saveAlertState(state);
-                console.log(`Successfully sent 24h deadline alert for ${gwInfo.name}!`);
-            } catch (err) {
-                console.error(`Failed to send 24h deadline alert:`, err.message);
-            }
-        } else {
-            console.log(`[Tracker] 24h deadline alert already delivered for ${gwInfo.name}.`);
+        const gwInfo = await getNextGameweekInfo();
+        if (!gwInfo) {
+            console.log('No upcoming Gameweek found.');
+            return false;
         }
-    }
 
-    return true;
+        const now = new Date();
+        const hoursToKickoff = (gwInfo.firstKickoff.getTime() - now.getTime()) / (1000 * 60 * 60);
+        const hoursToDeadline = (gwInfo.deadline.getTime() - now.getTime()) / (1000 * 60 * 60);
+
+        console.log(`\n-----------------------------------------------------------`);
+        console.log(`[GW Tracker] ${gwInfo.name} | First Game: ${gwInfo.firstMatch}`);
+        console.log(`[GW Tracker] Kickoff: ${gwInfo.firstKickoff.toISOString()} (in ${hoursToKickoff.toFixed(1)} hrs)`);
+        console.log(`[GW Tracker] FPL Deadline: ${gwInfo.deadline.toISOString()} (in ${hoursToDeadline.toFixed(1)} hrs)`);
+        console.log(`-----------------------------------------------------------\n`);
+
+        const state = loadAlertState();
+        const key48h = `gw${gwInfo.id}_48h`;
+        const key24h = `gw${gwInfo.id}_24h`;
+
+        // Forced manual triggers
+        if (forcedType === '48h' || forcedType === 'fixtures') {
+            console.log(`Triggering manual 48-Hour Preview for ${gwInfo.name}...`);
+            const text = await generate48hPreview(gwInfo);
+            await client.sendMessage(targetChannelJid, text);
+            console.log('48h preview sent!');
+            return true;
+        }
+
+        if (forcedType === '24h' || forcedType === 'deadline') {
+            console.log(`Triggering manual 24-Hour Deadline Alert for ${gwInfo.name}...`);
+            const text = await generate24hDeadlineAlert(gwInfo);
+            await client.sendMessage(targetChannelJid, text);
+            console.log('24h deadline alert sent!');
+            return true;
+        }
+
+        // 48-Hour Automatic Alert: Triggers when <= 48h and > 24h
+        if (hoursToKickoff <= 48 && hoursToKickoff > 24) {
+            if (!state.sentAlerts[key48h]) {
+                console.log(`>>> Sending AUTOMATIC 48-Hour Alert for ${gwInfo.name}...`);
+                try {
+                    const text = await generate48hPreview(gwInfo);
+                    await client.sendMessage(targetChannelJid, text);
+                    state.sentAlerts[key48h] = new Date().toISOString();
+                    saveAlertState(state);
+                    console.log(`Successfully sent 48h alert for ${gwInfo.name}!`);
+                } catch (err) {
+                    console.error(`Failed to send 48h alert:`, err.message);
+                }
+            } else {
+                console.log(`[Tracker] 48h alert already delivered for ${gwInfo.name}.`);
+            }
+        }
+
+        // 24-Hour Automatic Alert: Triggers when <= 24h and > 0h
+        if (hoursToKickoff <= 24 && hoursToKickoff > 0) {
+            if (!state.sentAlerts[key24h]) {
+                console.log(`>>> Sending AUTOMATIC 24-Hour Deadline Alert for ${gwInfo.name}...`);
+                try {
+                    const text = await generate24hDeadlineAlert(gwInfo);
+                    await client.sendMessage(targetChannelJid, text);
+                    state.sentAlerts[key24h] = new Date().toISOString();
+                    saveAlertState(state);
+                    console.log(`Successfully sent 24h deadline alert for ${gwInfo.name}!`);
+                } catch (err) {
+                    console.error(`Failed to send 24h deadline alert:`, err.message);
+                }
+            } else {
+                console.log(`[Tracker] 24h deadline alert already delivered for ${gwInfo.name}.`);
+            }
+        }
+
+        return true;
+    } finally {
+        isCheckingSchedule = false;
+    }
 }
 
 // Event: QR code generation (Instant & 100% Reliable)
@@ -371,9 +450,9 @@ client.on('ready', async () => {
 
 // Command Listener: Trigger manually via WhatsApp message
 client.on('message_create', async (msg) => {
-    const targetChannelJid = process.env.TARGET_CHANNEL_JID;
+    const targetChannelJid = getSanitizedChannelJid();
     const body = msg.body.trim().toLowerCase();
-    const isTargetGroup = msg.to === targetChannelJid || msg.from === targetChannelJid;
+    const isTargetGroup = targetChannelJid && (msg.to === targetChannelJid || msg.from === targetChannelJid);
 
     if (msg.fromMe || isTargetGroup) {
         if (body === '!status') {
@@ -403,6 +482,16 @@ client.on('message_create', async (msg) => {
                 const chat = await msg.getChat();
                 await chat.sendMessage(`Failed to retrieve groups: ${err.message}`);
             }
+        } else if (body === '!help' || body === '!commands') {
+            const chat = await msg.getChat();
+            await chat.sendMessage(
+                `🤖 *FPL Broadcaster Commands:*\n\n` +
+                `• *!status* - Live Gameweek countdown & earliest kickoff\n` +
+                `• *!fixtures* or *!48h* - Force 48-Hour Fixtures Preview\n` +
+                `• *!deadline* or *!24h* - Force 24-Hour Final Deadline Alert\n` +
+                `• *!groups* - List all connected WhatsApp groups & JIDs\n` +
+                `• *!help* - Show this menu`
+            );
         }
     }
 });
@@ -411,6 +500,11 @@ client.on('message_create', async (msg) => {
 cron.schedule('*/15 * * * *', async () => {
     console.log(`[${new Date().toLocaleTimeString()}] Running periodic Gameweek schedule check...`);
     await checkAndSendSmartReminders();
+});
+
+// Event: Disconnect listener
+client.on('disconnected', (reason) => {
+    console.log('WhatsApp Client was disconnected:', reason);
 });
 
 // Start the client
