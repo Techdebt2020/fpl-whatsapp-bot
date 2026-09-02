@@ -321,32 +321,50 @@ async function checkAndSendSmartReminders(forcedType = null) {
 }
 
 let isPairingRequested = false;
+let pairingCodeShown = false;
 
 // Event: QR code / pairing code generation
 client.on('qr', async (qr) => {
-    console.log('\n================================================================');
-    console.log('📱 SCAN THE QR CODE BELOW IN WHATSAPP TO LINK:');
-    console.log('================================================================\n');
-    qrcode.generate(qr, { small: true });
-
     const phoneNumber = process.env.PHONE_NUMBER;
-    if (phoneNumber && !isPairingRequested) {
-        isPairingRequested = true;
-        for (let attempt = 1; attempt <= 4; attempt++) {
-            try {
-                await new Promise(r => setTimeout(r, 2000));
-                const code = await client.requestPairingCode(phoneNumber.trim());
-                if (code) {
-                    console.log('================================================================');
-                    console.log(`📱 8-DIGIT PAIRING CODE GENERATED:  * ${code} *`);
-                    console.log('   (In WhatsApp -> Settings -> Linked Devices -> Link with phone number)');
-                    console.log('================================================================\n');
-                    break;
+
+    if (phoneNumber) {
+        if (pairingCodeShown) {
+            // Already generated an active pairing code — keep it steady for the user
+            return;
+        }
+
+        if (!isPairingRequested) {
+            isPairingRequested = true;
+            console.log('\n[WhatsApp] Initializing secure phone pairing connection...');
+
+            for (let attempt = 1; attempt <= 5; attempt++) {
+                try {
+                    await new Promise(r => setTimeout(r, 2000));
+                    const code = await client.requestPairingCode(phoneNumber.trim(), true, 300000);
+                    if (code) {
+                        pairingCodeShown = true;
+                        console.log('\n================================================================');
+                        console.log('📱 YOUR WHATSAPP PAIRING CODE (Valid for 3 minutes):');
+                        console.log(`\n👉       *  ${code}  *\n`);
+                        console.log('How to enter it on your phone:');
+                        console.log('1. Open WhatsApp on your phone');
+                        console.log('2. Go to Settings -> Linked Devices -> Link a Device');
+                        console.log('3. Tap "Link with phone number instead" at the bottom');
+                        console.log(`4. Enter the 8-digit code: ${code}`);
+                        console.log('================================================================\n');
+                        console.log('Waiting for you to enter the code on your phone...\n');
+                        break;
+                    }
+                } catch (err) {
+                    // Waiting for page auth module to mount
                 }
-            } catch (err) {
-                console.log(`Pairing code handshake waiting for page (attempt ${attempt}/4)...`);
             }
         }
+    } else {
+        console.log('\n================================================================');
+        console.log('📱 SCAN THE QR CODE BELOW IN WHATSAPP TO LINK:');
+        console.log('================================================================\n');
+        qrcode.generate(qr, { small: true });
     }
 });
 
