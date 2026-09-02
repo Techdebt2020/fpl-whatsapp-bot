@@ -11,7 +11,6 @@ require('dotenv').config();
 process.on('unhandledRejection', (reason, promise) => {
     const errStr = String(reason || '');
     if (errStr.includes('Execution context was destroyed') || errStr.includes('Navigation')) {
-        // Harmless transient error during WhatsApp Web page redirection after login
         return;
     }
     console.error('Unhandled Rejection:', reason);
@@ -20,11 +19,30 @@ process.on('unhandledRejection', (reason, promise) => {
 process.on('uncaughtException', (err) => {
     const errStr = String(err || '');
     if (errStr.includes('Execution context was destroyed') || errStr.includes('Navigation')) {
-        // Harmless transient error during WhatsApp Web page redirection after login
         return;
     }
     console.error('Uncaught Exception:', err);
 });
+
+// Resilient patch for WhatsApp Web page navigation during handshake
+const originalInject = Client.prototype.inject;
+Client.prototype.inject = async function() {
+    let retries = 15;
+    while (retries > 0) {
+        try {
+            return await originalInject.call(this);
+        } catch (err) {
+            const msg = String(err || '');
+            if (msg.includes('Execution context was destroyed') || msg.includes('Navigation')) {
+                console.log('WhatsApp page redirecting during login, retrying in 1s...');
+                await new Promise(r => setTimeout(r, 1000));
+                retries--;
+                continue;
+            }
+            throw err;
+        }
+    }
+};
 
 // Verify API Key
 const geminiApiKey = process.env.GEMINI_API_KEY;
@@ -304,29 +322,22 @@ async function checkAndSendSmartReminders(forcedType = null) {
 
 // Event: QR code / pairing code generation
 client.on('qr', async (qr) => {
+    console.log('\n================================================================');
+    console.log('📱 SCAN THE QR CODE BELOW IN WHATSAPP TO LINK:');
+    console.log('================================================================\n');
+    qrcode.generate(qr, { small: true });
+
     const phoneNumber = process.env.PHONE_NUMBER;
     if (phoneNumber) {
         try {
-            console.log(`Requesting pairing code for ${phoneNumber.trim()}...`);
             const code = await client.requestPairingCode(phoneNumber.trim());
-            console.log('\n================================================================');
-            console.log('📱 WHATSAPP PAIRING CODE GENERATED!');
-            console.log(`Your pairing code is:  * ${code} *`);
-            console.log('\nHow to link:');
-            console.log('1. Open WhatsApp on your phone.');
-            console.log('2. Go to Settings -> Linked Devices -> Link a Device.');
-            console.log('3. Tap "Link with phone number instead" at the bottom.');
-            console.log(`4. Enter the 8-digit code: ${code}`);
-            console.log('================================================================\n');
+            console.log('----------------------------------------------------------------');
+            console.log(`👉 OR enter 8-digit Pairing Code on phone:  * ${code} *`);
+            console.log('   (In WhatsApp -> Settings -> Linked Devices -> Link with phone number)');
+            console.log('----------------------------------------------------------------\n');
         } catch (err) {
-            console.error('Failed to request pairing code:', err.message);
-            console.log('Falling back to QR code display:');
-            qrcode.generate(qr, { small: true });
+            console.log('Note: Pairing code skipped, please scan the QR code above.');
         }
-    } else {
-        console.log('\n--- SCAN THE QR CODE BELOW TO CONNECT ---');
-        qrcode.generate(qr, { small: true });
-        console.log('-----------------------------------------\n');
     }
 });
 
