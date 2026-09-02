@@ -207,18 +207,28 @@ async function callGeminiWithFallback(prompt, useSearch = true) {
     return null;
 }
 
+// Formats any Date object into 5 international timezones with bold WhatsApp formatting
+function formatMultiTimezone(date) {
+    const opts = { hour: '2-digit', minute: '2-digit', hour12: false };
+    const uk = new Intl.DateTimeFormat('en-GB', { ...opts, timeZone: 'Europe/London' }).format(date);
+    const ist = new Intl.DateTimeFormat('en-GB', { ...opts, timeZone: 'Asia/Kolkata' }).format(date);
+    const cet = new Intl.DateTimeFormat('en-GB', { ...opts, timeZone: 'Europe/Paris' }).format(date);
+    const ast = new Intl.DateTimeFormat('en-GB', { ...opts, timeZone: 'Asia/Qatar' }).format(date);
+    const pst = new Intl.DateTimeFormat('en-GB', { ...opts, timeZone: 'America/Los_Angeles' }).format(date);
+    return `*${uk} UK | ${ist} IST | ${cet} CET | ${ast} AST | ${pst} PST*`;
+}
+
 // Local fallback if AI service is completely unreachable
 function generateLocal48hPreview(gwInfo) {
     const lines = [
         `🚨 *48-HOUR FPL NOTICE: ${gwInfo.name.toUpperCase()} APPROACHING* 🚨\n`,
         `⚽ *First Match:* ${gwInfo.firstMatch}`,
-        `⏰ *Kickoff:* ${gwInfo.firstKickoff.toUTCString()}`,
-        `⏳ *FPL Team Lock Deadline:* ${gwInfo.deadline.toUTCString()}\n`,
+        `⏰ *Kickoff:* ${formatMultiTimezone(gwInfo.firstKickoff)}`,
+        `⏳ *FPL Team Lock Deadline:* ${formatMultiTimezone(gwInfo.deadline)}\n`,
         `*MATCH SCHEDULE:*`
     ];
     gwInfo.fixtures.forEach(f => {
-        const timeStr = f.kickoff.toUTCString().replace(/:\d\d GMT$/, ' UTC');
-        lines.push(`• ⚽ *${f.home}* vs *${f.away}* - ${timeStr}`);
+        lines.push(`• ⚽ *${f.home}* vs *${f.away}* - ${formatMultiTimezone(f.kickoff)}`);
     });
     lines.push(`\nDon't forget to review your squad and confirm captaincy picks!`);
     return lines.join('\n');
@@ -227,8 +237,8 @@ function generateLocal48hPreview(gwInfo) {
 function generateLocal24hAlert(gwInfo) {
     return `⏳ *FINAL 24-HOUR DEADLINE ALERT: ${gwInfo.name.toUpperCase()}* ⏳\n\n` +
            `⚽ *Opening Match:* ${gwInfo.firstMatch}\n` +
-           `⏰ *Kickoff:* ${gwInfo.firstKickoff.toUTCString()}\n` +
-           `🔒 *OFFICIAL FPL DEADLINE:* ${gwInfo.deadline.toUTCString()} (Team lock happens 90 mins before kickoff!)\n\n` +
+           `⏰ *Kickoff:* ${formatMultiTimezone(gwInfo.firstKickoff)}\n` +
+           `🔒 *OFFICIAL FPL DEADLINE:* ${formatMultiTimezone(gwInfo.deadline)} (Team lock happens 90 mins before kickoff!)\n\n` +
            `*FINAL MANAGER CHECKLIST:*\n` +
            `• [ ] Vice-captain confirmed?\n` +
            `• [ ] Starting XI locked?\n` +
