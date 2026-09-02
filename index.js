@@ -472,75 +472,92 @@ client.on('ready', async () => {
 
 const processedMessages = new Set();
 
-async function handleCommand(msg) {
-    if (!msg || !msg.body) return;
-    const msgId = msg.id ? msg.id._serialized : null;
-    if (msgId && processedMessages.has(msgId)) return;
-    if (msgId) {
-        processedMessages.add(msgId);
-        if (processedMessages.size > 200) processedMessages.clear();
-    }
-
-    const body = msg.body.trim().toLowerCase();
-    if (!body.startsWith('!')) return;
-
-    const targetChannelJid = getSanitizedChannelJid();
-    const isTargetGroup = targetChannelJid && (msg.to === targetChannelJid || msg.from === targetChannelJid);
-
-    console.log(`[Command Received] "${body}" from ${msg.fromMe ? 'Me (Self)' : msg.from}`);
-
-    if (msg.fromMe || isTargetGroup) {
-        if (body === '!status') {
-            console.log('Replying to !status command...');
-            const info = await getNextGameweekInfo();
-            if (info) {
-                const now = new Date();
-                const hKickoff = ((info.firstKickoff - now) / 3600000).toFixed(1);
-                const hDeadline = ((info.deadline - now) / 3600000).toFixed(1);
-                await msg.reply(`🤖 *FPL Broadcaster Status*\n\n• Next: *${info.name}*\n• First Match: *${info.firstMatch}*\n• Kickoff: *${hKickoff} hrs*\n• Deadline: *${hDeadline} hrs*`);
-            }
-        } else if (body === '!preview' || body === '!preview48h') {
-            console.log('Generating private 48h preview...');
-            const info = await getNextGameweekInfo();
-            if (info) {
-                await msg.reply('⏳ *Generating 48-Hour Preview for your eyes only...*');
-                const text = await generate48hPreview(info);
-                await msg.reply(text);
-            }
-        } else if (body === '!preview24h') {
-            console.log('Generating private 24h deadline alert...');
-            const info = await getNextGameweekInfo();
-            if (info) {
-                await msg.reply('⏳ *Generating 24-Hour Alert for your eyes only...*');
-                const text = await generate24hDeadlineAlert(info);
-                await msg.reply(text);
-            }
-        } else if (body === '!48h' || body === '!fixtures') {
-            console.log('Manual 48h broadcast command received.');
-            await checkAndSendSmartReminders('48h');
-        } else if (body === '!24h' || body === '!deadline' || body === '!reminder') {
-            console.log('Manual 24h deadline broadcast command received.');
-            await checkAndSendSmartReminders('24h');
-        } else if (body === '!groups') {
-            try {
-                const chats = await client.getChats();
-                const groups = chats.filter(c => c.isGroup);
-                const text = groups.map(g => `• *${g.name}*:\n${g.id._serialized}`).join('\n\n');
-                await msg.reply(`📋 *Your WhatsApp Groups & JIDs:*\n\n${text}`);
-            } catch (err) {
-                await msg.reply(`Failed to retrieve groups: ${err.message}`);
-            }
-        } else if (body === '!help' || body === '!commands') {
-            await msg.reply(
-                `🤖 *FPL Broadcaster Commands:*\n\n` +
-                `• *!status* - Live Gameweek countdown & earliest kickoff\n` +
-                `• *!preview* - Preview 48-hour broadcast privately here\n` +
-                `• *!preview24h* - Preview 24-hour deadline alert privately here\n` +
-                `• *!groups* - List all connected WhatsApp groups & JIDs\n` +
-                `• *!help* - Show this menu\n\n` +
-                `*(Note: !48h and !24h broadcast directly to the configured group)*`
-            );
+async function safeReply(msg, text) {
+    try {
+        return await msg.reply(text);
+    } catch (e1) {
+        try {
+            const dest = msg.fromMe ? (msg.to || msg.from) : msg.from;
+            return await client.sendMessage(dest, text);
+        } catch (e2) {
+            console.error('Failed to deliver reply:', e2.message);
         }
+    }
+}
+
+async function handleCommand(msg) {
+    try {
+        if (!msg || !msg.body) return;
+        const msgId = msg.id ? msg.id._serialized : null;
+        if (msgId && processedMessages.has(msgId)) return;
+        if (msgId) {
+            processedMessages.add(msgId);
+            if (processedMessages.size > 200) processedMessages.clear();
+        }
+
+        const body = msg.body.trim().toLowerCase();
+        if (!body.startsWith('!')) return;
+
+        const targetChannelJid = getSanitizedChannelJid();
+        const isTargetGroup = targetChannelJid && (msg.to === targetChannelJid || msg.from === targetChannelJid);
+
+        console.log(`[Command Received] "${body}" from ${msg.fromMe ? 'Me (Self)' : msg.from}`);
+
+        if (msg.fromMe || isTargetGroup) {
+            if (body === '!status') {
+                console.log('Replying to !status command...');
+                const info = await getNextGameweekInfo();
+                if (info) {
+                    const now = new Date();
+                    const hKickoff = ((info.firstKickoff - now) / 3600000).toFixed(1);
+                    const hDeadline = ((info.deadline - now) / 3600000).toFixed(1);
+                    await safeReply(msg, `🤖 *FPL Broadcaster Status*\n\n• Next: *${info.name}*\n• First Match: *${info.firstMatch}*\n• Kickoff: *${hKickoff} hrs*\n• Deadline: *${hDeadline} hrs*`);
+                }
+            } else if (body === '!preview' || body === '!preview48h') {
+                console.log('Generating private 48h preview...');
+                const info = await getNextGameweekInfo();
+                if (info) {
+                    await safeReply(msg, '⏳ *Generating 48-Hour Preview for your eyes only...*');
+                    const text = await generate48hPreview(info);
+                    await safeReply(msg, text);
+                }
+            } else if (body === '!preview24h') {
+                console.log('Generating private 24h deadline alert...');
+                const info = await getNextGameweekInfo();
+                if (info) {
+                    await safeReply(msg, '⏳ *Generating 24-Hour Alert for your eyes only...*');
+                    const text = await generate24hDeadlineAlert(info);
+                    await safeReply(msg, text);
+                }
+            } else if (body === '!48h' || body === '!fixtures') {
+                console.log('Manual 48h broadcast command received.');
+                await checkAndSendSmartReminders('48h');
+            } else if (body === '!24h' || body === '!deadline' || body === '!reminder') {
+                console.log('Manual 24h deadline broadcast command received.');
+                await checkAndSendSmartReminders('24h');
+            } else if (body === '!groups') {
+                try {
+                    const chats = await client.getChats();
+                    const groups = chats.filter(c => c.isGroup);
+                    const text = groups.map(g => `• *${g.name}*:\n${g.id._serialized}`).join('\n\n');
+                    await safeReply(msg, `📋 *Your WhatsApp Groups & JIDs:*\n\n${text}`);
+                } catch (err) {
+                    await safeReply(msg, `Failed to retrieve groups: ${err.message}`);
+                }
+            } else if (body === '!help' || body === '!commands') {
+                await safeReply(msg, 
+                    `🤖 *FPL Broadcaster Commands:*\n\n` +
+                    `• *!status* - Live Gameweek countdown & earliest kickoff\n` +
+                    `• *!preview* - Preview 48-hour broadcast privately here\n` +
+                    `• *!preview24h* - Preview 24-hour deadline alert privately here\n` +
+                    `• *!groups* - List all connected WhatsApp groups & JIDs\n` +
+                    `• *!help* - Show this menu\n\n` +
+                    `*(Note: !48h and !24h broadcast directly to the configured group)*`
+                );
+            }
+        }
+    } catch (err) {
+        console.error('Error handling command:', err.message);
     }
 }
 
