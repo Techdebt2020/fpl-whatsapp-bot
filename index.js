@@ -19,7 +19,7 @@ const genAI = new GoogleGenerativeAI(geminiApiKey);
 
 const isLinux = os.platform() === 'linux';
 
-// Ultra-Low-RAM Puppeteer Options for e2-micro VM (saves 60%+ RAM)
+// Puppeteer Options optimized for Linux VM
 const puppeteerOptions = {
     headless: true,
     protocolTimeout: 0,
@@ -28,19 +28,11 @@ const puppeteerOptions = {
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
         '--no-first-run',
         '--no-zygote',
-        '--single-process',
         '--disable-gpu',
-        '--disable-extensions',
-        '--disable-default-apps',
-        '--disable-component-update',
-        '--disable-background-networking',
-        '--disable-sync',
-        '--disable-translate',
-        '--renderer-process-limit=1',
-        '--js-flags=--max-old-space-size=256',
-        '--blink-settings=imagesEnabled=false'
+        '--disable-extensions'
     ]
 };
 
@@ -57,13 +49,9 @@ const clientOptions = {
     authStrategy: new LocalAuth({
         dataPath: './.wwebjs_auth'
     }),
-    webVersionCache: {
-        type: 'remote',
-        remotePath: 'https://raw.githubusercontent.com/wwebjs/web-version-cache/main/with-chats/1.25.0.html'
-    },
     authTimeoutMs: 120000,
     puppeteer: puppeteerOptions,
-    userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+    userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
 };
 
 // Initialize WhatsApp Client
@@ -321,9 +309,19 @@ client.on('qr', async (qr) => {
     }
 });
 
+// Event: Loading screen progress
+client.on('loading_screen', (percent, message) => {
+    console.log(`WhatsApp loading: ${percent}% (${message || 'syncing'})...`);
+});
+
 // Event: Successfully authenticated
 client.on('authenticated', () => {
     console.log('WhatsApp Web authenticated successfully!');
+});
+
+// Event: Authentication failure
+client.on('auth_failure', (msg) => {
+    console.error('Authentication failure:', msg);
 });
 
 // Event: Client is ready
