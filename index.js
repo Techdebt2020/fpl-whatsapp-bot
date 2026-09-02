@@ -448,18 +448,8 @@ client.on('auth_failure', (msg) => {
 // Event: Client is ready
 client.on('ready', async () => {
     console.log('WhatsApp Client is ready!\n');
-
-    // List all groups and their JIDs for easy reference
-    try {
-        const chats = await client.getChats();
-        const groups = chats.filter(c => c.isGroup);
-        console.log('================================================================');
-        console.log('📋 CONNECTED WHATSAPP GROUPS & JIDs:');
-        groups.forEach(g => console.log(`• "${g.name}" -> ${g.id._serialized}`));
-        console.log('================================================================\n');
-    } catch (err) {
-        console.log('Note: Group list could not be fetched:', err.message);
-    }
+    const targetChannelJid = getSanitizedChannelJid();
+    console.log(`Target WhatsApp Broadcast Group: ${targetChannelJid || 'Not configured'}\n`);
 
     console.log('Smart Gameweek Tracker initialized:');
     console.log('- 48-Hour Alert: Triggers 48h before the first kickoff of every Gameweek.');
