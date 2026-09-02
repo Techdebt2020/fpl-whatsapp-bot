@@ -1,0 +1,16 @@
+{
+  "name": "fpl-whatsapp-bot",
+  "version": "1.0.0",
+  "description": "EPL Fixtures Automated WhatsApp Channel Broadcaster",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0",
+    "dotenv": "^16.4.5",
+    "node-cron": "^3.0.3",
+    "qrcode-terminal": "^0.12.0",
+    "whatsapp-web.js": "^1.25.0"
+  }
+}
