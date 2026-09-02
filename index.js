@@ -320,6 +320,8 @@ async function checkAndSendSmartReminders(forcedType = null) {
     return true;
 }
 
+let isPairingRequested = false;
+
 // Event: QR code / pairing code generation
 client.on('qr', async (qr) => {
     console.log('\n================================================================');
@@ -328,15 +330,22 @@ client.on('qr', async (qr) => {
     qrcode.generate(qr, { small: true });
 
     const phoneNumber = process.env.PHONE_NUMBER;
-    if (phoneNumber) {
-        try {
-            const code = await client.requestPairingCode(phoneNumber.trim());
-            console.log('----------------------------------------------------------------');
-            console.log(`👉 OR enter 8-digit Pairing Code on phone:  * ${code} *`);
-            console.log('   (In WhatsApp -> Settings -> Linked Devices -> Link with phone number)');
-            console.log('----------------------------------------------------------------\n');
-        } catch (err) {
-            console.log('Note: Pairing code skipped, please scan the QR code above.');
+    if (phoneNumber && !isPairingRequested) {
+        isPairingRequested = true;
+        for (let attempt = 1; attempt <= 4; attempt++) {
+            try {
+                await new Promise(r => setTimeout(r, 2000));
+                const code = await client.requestPairingCode(phoneNumber.trim());
+                if (code) {
+                    console.log('================================================================');
+                    console.log(`📱 8-DIGIT PAIRING CODE GENERATED:  * ${code} *`);
+                    console.log('   (In WhatsApp -> Settings -> Linked Devices -> Link with phone number)');
+                    console.log('================================================================\n');
+                    break;
+                }
+            } catch (err) {
+                console.log(`Pairing code handshake waiting for page (attempt ${attempt}/4)...`);
+            }
         }
     }
 });
