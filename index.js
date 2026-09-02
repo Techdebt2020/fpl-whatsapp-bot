@@ -487,6 +487,24 @@ client.on('message_create', async (msg) => {
                 const chat = await msg.getChat();
                 await chat.sendMessage(`🤖 *FPL Broadcaster Status*\n\n• Next: *${info.name}*\n• First Match: *${info.firstMatch}*\n• Kickoff: *${hKickoff} hrs*\n• Deadline: *${hDeadline} hrs*`);
             }
+        } else if (body === '!preview' || body === '!preview48h') {
+            console.log('Private 48h preview command received, replying to chat...');
+            const info = await getNextGameweekInfo();
+            if (info) {
+                const chat = await msg.getChat();
+                await chat.sendMessage('⏳ *Generating 48-Hour Preview for you privately...*');
+                const text = await generate48hPreview(info);
+                await chat.sendMessage(text);
+            }
+        } else if (body === '!preview24h') {
+            console.log('Private 24h deadline preview command received, replying to chat...');
+            const info = await getNextGameweekInfo();
+            if (info) {
+                const chat = await msg.getChat();
+                await chat.sendMessage('⏳ *Generating 24-Hour Alert for you privately...*');
+                const text = await generate24hDeadlineAlert(info);
+                await chat.sendMessage(text);
+            }
         } else if (body === '!48h' || body === '!fixtures') {
             console.log('Manual 48h broadcast command received.');
             await checkAndSendSmartReminders('48h');
@@ -509,10 +527,11 @@ client.on('message_create', async (msg) => {
             await chat.sendMessage(
                 `🤖 *FPL Broadcaster Commands:*\n\n` +
                 `• *!status* - Live Gameweek countdown & earliest kickoff\n` +
-                `• *!fixtures* or *!48h* - Force 48-Hour Fixtures Preview\n` +
-                `• *!deadline* or *!24h* - Force 24-Hour Final Deadline Alert\n` +
+                `• *!preview* - Preview 48-hour broadcast privately here\n` +
+                `• *!preview24h* - Preview 24-hour deadline alert privately here\n` +
                 `• *!groups* - List all connected WhatsApp groups & JIDs\n` +
-                `• *!help* - Show this menu`
+                `• *!help* - Show this menu\n\n` +
+                `*(Note: !48h and !24h broadcast directly to the configured group)*`
             );
         }
     }
