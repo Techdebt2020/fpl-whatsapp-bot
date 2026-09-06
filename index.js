@@ -146,6 +146,25 @@ async function getNextGameweekInfo() {
         const firstKickoff = timedFixtures.length > 0 ? new Date(timedFixtures[0].kickoff_time) : new Date(nextEvent.deadline_time);
         const deadline = new Date(nextEvent.deadline_time);
 
+        // Extract live player intelligence directly from the official FPL API
+        const topTransferredIn = [...data.elements]
+            .sort((a, b) => (b.transfers_in_event || 0) - (a.transfers_in_event || 0))
+            .slice(0, 5)
+            .map(p => `• ${p.web_name} (${teams[p.team]?.name || 'PL'}, ${p.selected_by_percent}% owned, +${p.transfers_in_event} transfers in)`)
+            .join('\n');
+
+        const topForm = [...data.elements]
+            .sort((a, b) => parseFloat(b.form || 0) - parseFloat(a.form || 0))
+            .slice(0, 5)
+            .map(p => `• ${p.web_name} (${teams[p.team]?.name || 'PL'}, Form: ${p.form}, Pts: ${p.total_points})`)
+            .join('\n');
+
+        const injuries = data.elements
+            .filter(p => p.news && p.news.length > 0 && (p.selected_by_percent > 3 || p.now_cost > 70))
+            .slice(0, 6)
+            .map(p => `• ${p.web_name} (${teams[p.team]?.name || 'PL'}): ${p.news}`)
+            .join('\n');
+
         return {
             id: nextEvent.id,
             name: nextEvent.name,
@@ -156,7 +175,10 @@ async function getNextGameweekInfo() {
                 home: teams[f.team_h]?.name || 'Home',
                 away: teams[f.team_a]?.name || 'Away',
                 kickoff: new Date(f.kickoff_time)
-            }))
+            })),
+            topTransferredIn,
+            topForm,
+            injuries
         };
     } catch (e) {
         console.error('Error fetching FPL Gameweek info:', e.message);
@@ -167,9 +189,7 @@ async function getNextGameweekInfo() {
 // List of models to try in order of preference
 const FALLBACK_MODELS = [
     'gemini-2.5-flash',
-    'gemini-flash-latest',
-    'gemini-2.5-flash-lite',
-    'gemini-2.5-pro'
+    'gemini-flash-latest'
 ];
 
 // Helper to call Gemini with automatic model & tool fallback
@@ -256,13 +276,33 @@ async function generate48hPreview(gwInfo) {
         `• ⚽ *${f.home}* vs *${f.away}* - ${formatMultiTimezone(f.kickoff)}`
     ).join('\n');
 
-    const prompt = `You are an elite Premier League broadcast host.
+    const prompt = `You are an elite, modern Premier League and FPL broadcast host.
 Today is 48 HOURS before the kickoff of the upcoming ${gwInfo.name}.
 Opening Match: ${gwInfo.firstMatch} (Kickoff: ${kickoffFormatted}).
 FPL Team Selection Deadline: ${deadlineFormatted} (90 mins before kickoff).
 
-Official Premier League Fixtures for this Gameweek (DO NOT CHANGE OR INVENT MATCHES):
+OFFICIAL PREMIER LEAGUE FIXTURES (DO NOT CHANGE OR INVENT MATCHES):
 ${fixtureListText}
+
+OFFICIAL LIVE FPL API DATA:
+Top In-Form Players:
+${gwInfo.topForm || 'N/A'}
+
+Top Transferred-In Players This Week:
+${gwInfo.topTransferredIn || 'N/A'}
+
+Official Club Injury Flags & News:
+${gwInfo.injuries || 'No major flags'}
+
+CURRENT MANAGERS FACT SHEET (CRITICAL - STRICT FACTUAL ACCURACY):
+- Liverpool: Arne Slot (Jürgen Klopp left Liverpool in 2024! NEVER mention Klopp!)
+- Arsenal: Mikel Arteta
+- Chelsea: Enzo Maresca (Mauricio Pochettino is gone!)
+- Man City: Pep Guardiola
+- Man United: Erik ten Hag
+- Tottenham: Ange Postecoglou
+- Aston Villa: Unai Emery
+- Newcastle: Eddie Howe
 
 Generate an exciting, high-energy 48-Hour Match Preview & Fixtures broadcast for WhatsApp.
 
@@ -270,10 +310,14 @@ Requirements:
 1. Catchy headline with emojis: 🚨 *48-HOUR FPL NOTICE: ${gwInfo.name.toUpperCase()} APPROACHING* 🚨
 2. Announce the opening match (${gwInfo.firstMatch}) and exact time countdown.
 3. List all the official match pairings provided above with their multi-timezone kickoff times.
-4. Highlight 2 big blockbuster clashes from the schedule (e.g. Everton vs Man Utd, Arsenal vs Chelsea) with tactical talking points.
-5. Emphasize the FPL team lock deadline (${deadlineFormatted}).
-6. Concluding tip to review squad, check injuries, and plan transfers early.
-7. CRITICAL: Use single asterisks (*bold*) for WhatsApp bolding. Never use double asterisks (**). Do not use markdown # headers. Only list the actual matches provided above.`;
+4. Highlight 2 big blockbuster clashes from the schedule with tactical talking points (mentioning current managers like Arne Slot, Arteta, Guardiola, etc.).
+5. Highlight top in-form players and transfer market trends from the official live FPL data above.
+6. Emphasize the FPL team lock deadline (${deadlineFormatted}).
+7. Concluding tip to review squad, check injuries, and plan transfers early.
+8. CRITICAL ACCURACY RULES:
+   - NEVER mention former managers like Jürgen Klopp (Arne Slot is Liverpool manager).
+   - Only reference real, current players from the official fixtures and live data provided above.
+   - Use single asterisks (*bold*) for WhatsApp bolding. Never use double asterisks (**). Do not use markdown # headers. Only list the actual matches provided above.`;
 
     const aiText = await callGeminiWithFallback(prompt, true);
     return aiText || generateLocal48hPreview(gwInfo);
@@ -293,8 +337,28 @@ Today is exactly 24 HOURS before the kickoff of ${gwInfo.name}!
 Opening match: ${gwInfo.firstMatch} (Kickoff: ${kickoffFormatted}).
 THE OFFICIAL FPL DEADLINE IS: ${deadlineFormatted} (Team lock happens 90 minutes before kickoff).
 
-Official Premier League Fixtures for this Gameweek:
+OFFICIAL PREMIER LEAGUE FIXTURES:
 ${fixtureListText}
+
+OFFICIAL LIVE FPL DATA:
+Top In-Form Players:
+${gwInfo.topForm || 'N/A'}
+
+Top Transferred-In Players:
+${gwInfo.topTransferredIn || 'N/A'}
+
+Official Injury Flags:
+${gwInfo.injuries || 'None'}
+
+CURRENT MANAGERS FACT SHEET (CRITICAL - DO NOT HALLUCINATE):
+- Liverpool: Arne Slot (NOT Jürgen Klopp!)
+- Arsenal: Mikel Arteta
+- Chelsea: Enzo Maresca (NOT Mauricio Pochettino!)
+- Man City: Pep Guardiola
+- Man United: Erik ten Hag
+- Tottenham: Ange Postecoglou
+- Aston Villa: Unai Emery
+- Newcastle: Eddie Howe
 
 Generate an urgent, must-read 24-Hour Final Deadline & Captaincy Alert for WhatsApp.
 
@@ -302,16 +366,17 @@ Requirements:
 1. Urgent Headline: ⏳ *FINAL 24-HOUR DEADLINE ALERT: ${gwInfo.name.toUpperCase()}* ⏳
 2. Prominently display the EXACT FPL DEADLINE (${deadlineFormatted}).
 3. "Captaincy Decision Matrix":
-   - Safe Essential Pick (highest expected returns based on this Gameweek's actual matchups)
+   - Safe Essential Pick (highest expected returns based on current in-form players and matchups)
    - Differential Captain Pick (<15% ownership) with high upside
-4. Top 3 Transfer Trends & Key Matchups for this round from the official fixtures above.
-5. Final Manager Checklist:
+4. Top 3 Transfer Trends & Key Matchups for this round from the official live FPL data provided above.
+5. Key injury warnings from the official injury list above.
+6. Final Manager Checklist:
    - [ ] Vice-captain confirmed?
    - [ ] Bench order prioritized?
    - [ ] Injury flags & press conference news checked?
    - [ ] Starting XI locked?
-6. High energy closing call: "Lock in your teams before the servers get busy!"
-7. CRITICAL: Use single asterisks (*bold*) for WhatsApp. Never use double asterisks (**). No markdown # headers.`;
+7. High energy closing call: "Lock in your teams before the servers get busy!"
+8. CRITICAL: NEVER mention former managers like Jürgen Klopp. Use single asterisks (*bold*) for WhatsApp. Never use double asterisks (**). No markdown # headers.`;
 
     const aiText = await callGeminiWithFallback(prompt, true);
     return aiText || generateLocal24hAlert(gwInfo);
