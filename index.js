@@ -149,16 +149,18 @@ async function getNextGameweekInfo() {
         const firstKickoff = timedFixtures.length > 0 ? new Date(timedFixtures[0].kickoff_time) : new Date(nextEvent.deadline_time);
         const deadline = new Date(nextEvent.deadline_time);
 
-        // Extract live player intelligence directly from the official FPL API
-        const topTransferredIn = [...data.elements]
+        // Extract live player intelligence directly from the official FPL API (active available players only)
+        const topTransferredIn = data.elements
+            .filter(p => p.status === 'a')
             .sort((a, b) => (b.transfers_in_event || 0) - (a.transfers_in_event || 0))
-            .slice(0, 5)
+            .slice(0, 6)
             .map(p => `• ${p.web_name} (${teams[p.team]?.name || 'PL'}, ${p.selected_by_percent}% owned, +${p.transfers_in_event} transfers in)`)
             .join('\n');
 
-        const topForm = [...data.elements]
+        const topForm = data.elements
+            .filter(p => p.status === 'a' && parseFloat(p.form || 0) > 0)
             .sort((a, b) => parseFloat(b.form || 0) - parseFloat(a.form || 0))
-            .slice(0, 5)
+            .slice(0, 6)
             .map(p => `• ${p.web_name} (${teams[p.team]?.name || 'PL'}, Form: ${p.form}, Pts: ${p.total_points})`)
             .join('\n');
 
