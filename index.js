@@ -69,7 +69,10 @@ const puppeteerOptions = {
         '--no-first-run',
         '--no-zygote',
         '--disable-gpu',
-        '--disable-extensions'
+        '--disable-extensions',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding'
     ]
 };
 
@@ -602,10 +605,26 @@ cron.schedule('*/15 * * * *', async () => {
     await checkAndSendSmartReminders();
 });
 
-// Event: Disconnect listener
-client.on('disconnected', (reason) => {
-    console.log('WhatsApp Client was disconnected:', reason);
+// Event: Disconnect listener (Auto-restart via PM2)
+client.on('disconnected', async (reason) => {
+    console.error('⚠️ WhatsApp Client was disconnected:', reason);
+    console.log('Restarting process via PM2 to re-establish clean connection...');
+    try {
+        await client.destroy();
+    } catch (e) {}
+    process.exit(1);
 });
+
+// Keep-alive ping every 5 minutes to prevent Chromium background freeze
+setInterval(async () => {
+    try {
+        if (client && client.pupPage && !client.pupPage.isClosed()) {
+            await client.pupPage.evaluate(() => window.location.href);
+        }
+    } catch (e) {
+        console.log('[Keep-Alive] Ping failed, socket may be reconnecting.');
+    }
+}, 300000);
 
 // Start the client
 console.log('Starting WhatsApp Client...');
