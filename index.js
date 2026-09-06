@@ -279,9 +279,7 @@ async function generate48hPreview(gwInfo) {
         `• ⚽ *${f.home}* vs *${f.away}* - ${formatMultiTimezone(f.kickoff)}`
     ).join('\n');
 
-    const prompt = `You are an elite Premier League and FPL broadcast host.
-Search Google to ground all your analysis in the current Premier League season, live club news, current managers, and active squads.
-
+    const prompt = `You are an elite Premier League and Fantasy Premier League (FPL) broadcast host.
 Today is 48 HOURS before the kickoff of ${gwInfo.name}.
 Opening Match: ${gwInfo.firstMatch} (Kickoff: ${kickoffFormatted}).
 FPL Team Selection Deadline: ${deadlineFormatted} (90 mins before kickoff).
@@ -299,15 +297,16 @@ ${gwInfo.topTransferredIn || 'N/A'}
 Official Club Injury Flags & News:
 ${gwInfo.injuries || 'No major flags'}
 
-CRITICAL ACCURACY & WEB SEARCH INSTRUCTIONS:
-1. Search Google for current Premier League headlines, current managers, and actual squad lineups.
-2. DO NOT use stale memory or assume former managers or transferred players from past seasons.
-3. Reference only real active players from the official fixture schedule and live FPL data above.
-4. Highlight 2 big blockbuster clashes from the fixtures with tactical talking points.
-5. Discuss top in-form players and transfer market trends from the official live FPL data above.
-6. Emphasize the FPL team lock deadline (${deadlineFormatted}).
-7. Concluding tip to review squad, check injury flags, and plan transfers early.
-8. CRITICAL: Use single asterisks (*bold*) for WhatsApp bolding. Never use double asterisks (**). Do not use markdown # headers. Only list the actual matches provided above.`;
+CRITICAL FPL CONTENT REQUIREMENTS:
+1. High-energy WhatsApp broadcast focusing 100% on FPL PLAYERS, transfers, form, goals, clean sheets, and captaincy picks.
+2. ABSOLUTE RULE: DO NOT mention managers or head coaches under any circumstances (managers score 0 FPL points). Focus entirely on active players.
+3. ABSOLUTE BAN: Under NO circumstances mention Erik ten Hag, Jürgen Klopp, or Mauricio Pochettino. They are not in the Premier League.
+4. List all the official match pairings provided above with their multi-timezone kickoff times.
+5. Highlight 2 big blockbuster clashes from an FPL perspective (attacking firepower vs leaky defenses).
+6. Discuss the top in-form players and transfer frenzy from the official live FPL data above.
+7. Emphasize the FPL team lock deadline (${deadlineFormatted}).
+8. Concluding tip to review squad, check injury flags, and plan transfers early.
+9. CRITICAL FORMATTING: Use single asterisks (*bold*) for WhatsApp bolding. Never use double asterisks (**). Do not use markdown # headers. Only list the actual matches provided above.`;
 
     const aiText = await callGeminiWithFallback(prompt, true);
     return aiText || generateLocal48hPreview(gwInfo);
@@ -322,9 +321,7 @@ async function generate24hDeadlineAlert(gwInfo) {
         `• ⚽ *${f.home}* vs *${f.away}* - ${formatMultiTimezone(f.kickoff)}`
     ).join('\n');
 
-    const prompt = `You are an elite Premier League analyst and fantasy broadcaster.
-Search Google to ground all your analysis in the current Premier League season, live club news, current managers, and active squads.
-
+    const prompt = `You are an elite Premier League and Fantasy Premier League (FPL) analyst.
 Today is exactly 24 HOURS before the kickoff of ${gwInfo.name}!
 Opening match: ${gwInfo.firstMatch} (Kickoff: ${kickoffFormatted}).
 THE OFFICIAL FPL DEADLINE IS: ${deadlineFormatted} (Team lock happens 90 minutes before kickoff).
@@ -342,21 +339,23 @@ ${gwInfo.topTransferredIn || 'N/A'}
 Official Club Injury Flags:
 ${gwInfo.injuries || 'None'}
 
-CRITICAL ACCURACY & WEB SEARCH INSTRUCTIONS:
-1. Search Google for current Premier League news, current managers, and active squad members.
-2. Generate an urgent, must-read 24-Hour Final Deadline & Captaincy Alert for WhatsApp.
-3. "Captaincy Decision Matrix":
+CRITICAL FPL CONTENT REQUIREMENTS:
+1. Urgent Headline: ⏳ *FINAL 24-HOUR DEADLINE ALERT: ${gwInfo.name.toUpperCase()}* ⏳
+2. Prominently display the EXACT FPL DEADLINE (${deadlineFormatted}).
+3. ABSOLUTE RULE: DO NOT mention managers or head coaches (managers score 0 FPL points). Focus 100% on the active players.
+4. ABSOLUTE BAN: Never mention Erik ten Hag, Jürgen Klopp, or Mauricio Pochettino.
+5. "Captaincy Decision Matrix":
    - Safe Essential Pick (highest expected returns based on current in-form players and matchups)
    - Differential Captain Pick (<15% ownership) with high upside
-4. Top 3 Transfer Trends & Key Matchups for this round from the official live FPL data provided above.
-5. Key injury warnings from the official injury list above.
-6. Final Manager Checklist:
+6. Top 3 Transfer Trends & Key Matchups for this round from the official live FPL data provided above.
+7. Key injury warnings from the official injury list above.
+8. Final Manager Checklist:
    - [ ] Vice-captain confirmed?
    - [ ] Bench order prioritized?
    - [ ] Injury flags & press conference news checked?
    - [ ] Starting XI locked?
-7. High energy closing call: "Lock in your teams before the servers get busy!"
-8. CRITICAL: Use single asterisks (*bold*) for WhatsApp. Never use double asterisks (**). No markdown # headers.`;
+9. High energy closing call: "Lock in your teams before the servers get busy!"
+10. CRITICAL: Use single asterisks (*bold*) for WhatsApp. Never use double asterisks (**). No markdown # headers.`;
 
     const aiText = await callGeminiWithFallback(prompt, true);
     return aiText || generateLocal24hAlert(gwInfo);
