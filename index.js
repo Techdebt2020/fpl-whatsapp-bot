@@ -276,48 +276,35 @@ async function generate48hPreview(gwInfo) {
         `• ⚽ *${f.home}* vs *${f.away}* - ${formatMultiTimezone(f.kickoff)}`
     ).join('\n');
 
-    const prompt = `You are an elite, modern Premier League and FPL broadcast host.
-Today is 48 HOURS before the kickoff of the upcoming ${gwInfo.name}.
+    const prompt = `You are an elite Premier League and FPL broadcast host.
+Search Google to ground all your analysis in the current Premier League season, live club news, current managers, and active squads.
+
+Today is 48 HOURS before the kickoff of ${gwInfo.name}.
 Opening Match: ${gwInfo.firstMatch} (Kickoff: ${kickoffFormatted}).
 FPL Team Selection Deadline: ${deadlineFormatted} (90 mins before kickoff).
 
-OFFICIAL PREMIER LEAGUE FIXTURES (DO NOT CHANGE OR INVENT MATCHES):
+OFFICIAL VERIFIED GAMEWEEK FIXTURES (DO NOT CHANGE OR INVENT MATCHES):
 ${fixtureListText}
 
-OFFICIAL LIVE FPL API DATA:
+OFFICIAL LIVE FPL STATS & MARKET TRENDS:
 Top In-Form Players:
 ${gwInfo.topForm || 'N/A'}
 
-Top Transferred-In Players This Week:
+Most Transferred-In Players This Week:
 ${gwInfo.topTransferredIn || 'N/A'}
 
 Official Club Injury Flags & News:
 ${gwInfo.injuries || 'No major flags'}
 
-CURRENT MANAGERS FACT SHEET (CRITICAL - STRICT FACTUAL ACCURACY):
-- Liverpool: Arne Slot (Jürgen Klopp left Liverpool in 2024! NEVER mention Klopp!)
-- Arsenal: Mikel Arteta
-- Chelsea: Enzo Maresca (Mauricio Pochettino is gone!)
-- Man City: Pep Guardiola
-- Man United: Erik ten Hag
-- Tottenham: Ange Postecoglou
-- Aston Villa: Unai Emery
-- Newcastle: Eddie Howe
-
-Generate an exciting, high-energy 48-Hour Match Preview & Fixtures broadcast for WhatsApp.
-
-Requirements:
-1. Catchy headline with emojis: 🚨 *48-HOUR FPL NOTICE: ${gwInfo.name.toUpperCase()} APPROACHING* 🚨
-2. Announce the opening match (${gwInfo.firstMatch}) and exact time countdown.
-3. List all the official match pairings provided above with their multi-timezone kickoff times.
-4. Highlight 2 big blockbuster clashes from the schedule with tactical talking points (mentioning current managers like Arne Slot, Arteta, Guardiola, etc.).
-5. Highlight top in-form players and transfer market trends from the official live FPL data above.
+CRITICAL ACCURACY & WEB SEARCH INSTRUCTIONS:
+1. Search Google for current Premier League headlines, current managers, and actual squad lineups.
+2. DO NOT use stale memory or assume former managers or transferred players from past seasons.
+3. Reference only real active players from the official fixture schedule and live FPL data above.
+4. Highlight 2 big blockbuster clashes from the fixtures with tactical talking points.
+5. Discuss top in-form players and transfer market trends from the official live FPL data above.
 6. Emphasize the FPL team lock deadline (${deadlineFormatted}).
-7. Concluding tip to review squad, check injuries, and plan transfers early.
-8. CRITICAL ACCURACY RULES:
-   - NEVER mention former managers like Jürgen Klopp (Arne Slot is Liverpool manager).
-   - Only reference real, current players from the official fixtures and live data provided above.
-   - Use single asterisks (*bold*) for WhatsApp bolding. Never use double asterisks (**). Do not use markdown # headers. Only list the actual matches provided above.`;
+7. Concluding tip to review squad, check injury flags, and plan transfers early.
+8. CRITICAL: Use single asterisks (*bold*) for WhatsApp bolding. Never use double asterisks (**). Do not use markdown # headers. Only list the actual matches provided above.`;
 
     const aiText = await callGeminiWithFallback(prompt, true);
     return aiText || generateLocal48hPreview(gwInfo);
@@ -333,38 +320,28 @@ async function generate24hDeadlineAlert(gwInfo) {
     ).join('\n');
 
     const prompt = `You are an elite Premier League analyst and fantasy broadcaster.
+Search Google to ground all your analysis in the current Premier League season, live club news, current managers, and active squads.
+
 Today is exactly 24 HOURS before the kickoff of ${gwInfo.name}!
 Opening match: ${gwInfo.firstMatch} (Kickoff: ${kickoffFormatted}).
 THE OFFICIAL FPL DEADLINE IS: ${deadlineFormatted} (Team lock happens 90 minutes before kickoff).
 
-OFFICIAL PREMIER LEAGUE FIXTURES:
+OFFICIAL VERIFIED GAMEWEEK FIXTURES:
 ${fixtureListText}
 
-OFFICIAL LIVE FPL DATA:
+OFFICIAL LIVE FPL STATS & MARKET TRENDS:
 Top In-Form Players:
 ${gwInfo.topForm || 'N/A'}
 
 Top Transferred-In Players:
 ${gwInfo.topTransferredIn || 'N/A'}
 
-Official Injury Flags:
+Official Club Injury Flags:
 ${gwInfo.injuries || 'None'}
 
-CURRENT MANAGERS FACT SHEET (CRITICAL - DO NOT HALLUCINATE):
-- Liverpool: Arne Slot (NOT Jürgen Klopp!)
-- Arsenal: Mikel Arteta
-- Chelsea: Enzo Maresca (NOT Mauricio Pochettino!)
-- Man City: Pep Guardiola
-- Man United: Erik ten Hag
-- Tottenham: Ange Postecoglou
-- Aston Villa: Unai Emery
-- Newcastle: Eddie Howe
-
-Generate an urgent, must-read 24-Hour Final Deadline & Captaincy Alert for WhatsApp.
-
-Requirements:
-1. Urgent Headline: ⏳ *FINAL 24-HOUR DEADLINE ALERT: ${gwInfo.name.toUpperCase()}* ⏳
-2. Prominently display the EXACT FPL DEADLINE (${deadlineFormatted}).
+CRITICAL ACCURACY & WEB SEARCH INSTRUCTIONS:
+1. Search Google for current Premier League news, current managers, and active squad members.
+2. Generate an urgent, must-read 24-Hour Final Deadline & Captaincy Alert for WhatsApp.
 3. "Captaincy Decision Matrix":
    - Safe Essential Pick (highest expected returns based on current in-form players and matchups)
    - Differential Captain Pick (<15% ownership) with high upside
@@ -376,7 +353,7 @@ Requirements:
    - [ ] Injury flags & press conference news checked?
    - [ ] Starting XI locked?
 7. High energy closing call: "Lock in your teams before the servers get busy!"
-8. CRITICAL: NEVER mention former managers like Jürgen Klopp. Use single asterisks (*bold*) for WhatsApp. Never use double asterisks (**). No markdown # headers.`;
+8. CRITICAL: Use single asterisks (*bold*) for WhatsApp. Never use double asterisks (**). No markdown # headers.`;
 
     const aiText = await callGeminiWithFallback(prompt, true);
     return aiText || generateLocal24hAlert(gwInfo);
