@@ -239,27 +239,9 @@ const FALLBACK_MODELS = [
     'gemini-flash-latest'
 ];
 
-// Helper to call Gemini with automatic model & tool fallback
-async function callGeminiWithFallback(prompt, useSearch = true) {
+// Helper to call Gemini with automatic model fallback
+async function callGeminiWithFallback(prompt) {
     for (const modelName of FALLBACK_MODELS) {
-        // First try with Google Search grounding
-        if (useSearch) {
-            try {
-                const model = genAI.getGenerativeModel({
-                    model: modelName,
-                    tools: [{ googleSearch: {} }]
-                });
-                const res = await model.generateContent(prompt);
-                let text = res.response.text().trim();
-                if (text) {
-                    return text.replace(/^#+\s*(.*)$/gmi, '*$1*').replace(/\*\*/g, '*');
-                }
-            } catch (err) {
-                console.log(`Search-grounded call failed for ${modelName}:`, err.message);
-            }
-        }
-
-        // Fallback: try without search tool
         try {
             const model = genAI.getGenerativeModel({ model: modelName });
             const res = await model.generateContent(prompt);
@@ -268,7 +250,7 @@ async function callGeminiWithFallback(prompt, useSearch = true) {
                 return text.replace(/^#+\s*(.*)$/gmi, '*$1*').replace(/\*\*/g, '*');
             }
         } catch (err) {
-            console.log(`Standard call failed for ${modelName}:`, err.message);
+            console.log(`Model ${modelName} call failed (${err.message}), trying next model...`);
         }
     }
     return null;
