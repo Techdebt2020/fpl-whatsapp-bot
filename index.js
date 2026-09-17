@@ -233,15 +233,32 @@ async function getNextGameweekInfo() {
 
 // List of models to try in order of preference
 const FALLBACK_MODELS = [
-    'gemini-3.6-flash',
     'gemini-2.5-flash',
-    'gemini-3.5-flash-lite',
+    'gemini-2.5-flash-lite',
     'gemini-flash-latest'
 ];
 
-// Helper to call Gemini with automatic model fallback
-async function callGeminiWithFallback(prompt) {
+// Helper to call Gemini with Google Search grounding and graceful direct fallback
+async function callGeminiWithFallback(prompt, useSearch = true) {
     for (const modelName of FALLBACK_MODELS) {
+        // 1. First attempt: Live Google Search grounding for real-time web context & press conferences
+        if (useSearch) {
+            try {
+                const model = genAI.getGenerativeModel({
+                    model: modelName,
+                    tools: [{ googleSearch: {} }]
+                });
+                const res = await model.generateContent(prompt);
+                let text = res.response.text().trim();
+                if (text) {
+                    return text.replace(/^#+\s*(.*)$/gmi, '*$1*').replace(/\*\*/g, '*');
+                }
+            } catch (err) {
+                console.log(`Search grounding unavailable for ${modelName} (${err.message}), falling back to direct generation...`);
+            }
+        }
+
+        // 2. Direct generation using the injected official live Premier League API data
         try {
             const model = genAI.getGenerativeModel({ model: modelName });
             const res = await model.generateContent(prompt);
@@ -250,7 +267,7 @@ async function callGeminiWithFallback(prompt) {
                 return text.replace(/^#+\s*(.*)$/gmi, '*$1*').replace(/\*\*/g, '*');
             }
         } catch (err) {
-            console.log(`Model ${modelName} call failed (${err.message}), trying next model...`);
+            console.log(`Direct generation failed for ${modelName}:`, err.message);
         }
     }
     return null;
