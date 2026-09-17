@@ -121,10 +121,16 @@ function saveAlertState(state) {
     }
 }
 
-// Fetch live Premier League Gameweek & Fixture details from official FPL API
+// Fetch live Premier League Gameweek & Fixture details from official FPL API with cache-busting
 async function getNextGameweekInfo() {
     try {
-        const res = await fetch('https://fantasy.premierleague.com/api/bootstrap-static/');
+        const timestamp = Date.now();
+        const res = await fetch(`https://fantasy.premierleague.com/api/bootstrap-static/?_t=${timestamp}`, {
+            headers: {
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache'
+            }
+        });
         if (!res.ok) throw new Error(`FPL bootstrap status: ${res.status}`);
         const data = await res.json();
 
@@ -138,8 +144,13 @@ async function getNextGameweekInfo() {
         let nextEvent = events.find(e => e.is_next) || events.find(e => e.is_current && !e.finished) || events.find(e => !e.finished);
         if (!nextEvent) return null;
 
-        // Fetch fixtures for this gameweek
-        const fixRes = await fetch(`https://fantasy.premierleague.com/api/fixtures/?event=${nextEvent.id}`);
+        // Fetch live fixtures for this gameweek with cache-busting
+        const fixRes = await fetch(`https://fantasy.premierleague.com/api/fixtures/?event=${nextEvent.id}&_t=${timestamp}`, {
+            headers: {
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache'
+            }
+        });
         if (!fixRes.ok) throw new Error(`FPL fixtures status: ${fixRes.status}`);
         const fixtures = await fixRes.json();
 
@@ -149,25 +160,51 @@ async function getNextGameweekInfo() {
         const firstKickoff = timedFixtures.length > 0 ? new Date(timedFixtures[0].kickoff_time) : new Date(nextEvent.deadline_time);
         const deadline = new Date(nextEvent.deadline_time);
 
-        // Extract live player intelligence directly from the official FPL API (active available players only)
-        const topTransferredIn = data.elements
-            .filter(p => p.status === 'a')
-            .sort((a, b) => (b.transfers_in_event || 0) - (a.transfers_in_event || 0))
-            .slice(0, 6)
-            .map(p => `• ${p.web_name} (${teams[p.team]?.name || 'PL'}, ${p.selected_by_percent}% owned, +${p.transfers_in_event} transfers in)`)
-            .join('\n');
-
+        // 1. Live Top In-Form Players (active available players only)
         const topForm = data.elements
             .filter(p => p.status === 'a' && parseFloat(p.form || 0) > 0)
             .sort((a, b) => parseFloat(b.form || 0) - parseFloat(a.form || 0))
-            .slice(0, 6)
-            .map(p => `• ${p.web_name} (${teams[p.team]?.name || 'PL'}, Form: ${p.form}, Pts: ${p.total_points})`)
+            .slice(0, 8)
+            .map(p => `• ${p.web_name} (${teams[p.team]?.name || 'PL'}, Form: ${p.form}, Pts: ${p.total_points}, Goals: ${p.goals_scored || 0})`)
             .join('\n');
 
-        const injuries = data.elements
-            .filter(p => p.news && p.news.length > 0 && (p.selected_by_percent > 3 || p.now_cost > 70))
+        // 2. Live Top Transferred-In Players this week
+        const topTransferredIn = data.elements
+            .filter(p => p.status === 'a')
+            .sort((a, b) => (b.transfers_in_event || 0) - (a.transfers_in_event || 0))
+            .slice(0, 8)
+            .map(p => `• ${p.web_name} (${teams[p.team]?.name || 'PL'}, ${p.selected_by_percent}% owned, +${p.transfers_in_event} transfers in)`)
+            .join('\n');
+
+        // 3. Live Top Transferred-Out Players (who managers are panic-selling)
+        const topTransferredOut = data.elements
+            .filter(p => (p.transfers_out_event || 0) > 0)
+            .sort((a, b) => (b.transfers_out_event || 0) - (a.transfers_out_event || 0))
             .slice(0, 6)
-            .map(p => `• ${p.web_name} (${teams[p.team]?.name || 'PL'}): ${p.news}`)
+            .map(p => `• ${p.web_name} (${teams[p.team]?.name || 'PL'}, -${p.transfers_out_event} sold this GW, Status: ${p.status === 'a' ? 'Available' : p.news || 'Flagged'})`)
+            .join('\n');
+
+        // 4. Live Most Owned / The Template Herd
+        const topOwned = data.elements
+            .filter(p => p.status === 'a')
+            .sort((a, b) => parseFloat(b.selected_by_percent || 0) - parseFloat(a.selected_by_percent || 0))
+            .slice(0, 8)
+            .map(p => `• ${p.web_name} (${teams[p.team]?.name || 'PL'}, ${p.selected_by_percent}% owned, Form: ${p.form})`)
+            .join('\n');
+
+        // 5. Live Verified Differential Gems (<15% owned with high form)
+        const topDifferentials = data.elements
+            .filter(p => p.status === 'a' && parseFloat(p.selected_by_percent || 0) < 15 && parseFloat(p.form || 0) >= 3.5)
+            .sort((a, b) => parseFloat(b.form || 0) - parseFloat(a.form || 0))
+            .slice(0, 6)
+            .map(p => `• ${p.web_name} (${teams[p.team]?.name || 'PL'}, Form: ${p.form}, ${p.selected_by_percent}% owned, Pts: ${p.total_points})`)
+            .join('\n');
+
+        // 6. Live Official Injury Flags & News directly from club press conferences
+        const injuries = data.elements
+            .filter(p => p.news && p.news.length > 0 && (p.selected_by_percent > 2.5 || p.now_cost > 65))
+            .slice(0, 8)
+            .map(p => `• ${p.web_name} (${teams[p.team]?.name || 'PL'}): ${p.news} (${p.chance_of_playing_next_round !== null ? p.chance_of_playing_next_round + '% chance' : 'Under assessment'})`)
             .join('\n');
 
         return {
@@ -182,7 +219,10 @@ async function getNextGameweekInfo() {
                 kickoff: new Date(f.kickoff_time)
             })),
             topTransferredIn,
+            topTransferredOut,
             topForm,
+            topOwned,
+            topDifferentials,
             injuries
         };
     } catch (e) {
@@ -193,7 +233,9 @@ async function getNextGameweekInfo() {
 
 // List of models to try in order of preference
 const FALLBACK_MODELS = [
+    'gemini-3.6-flash',
     'gemini-2.5-flash',
+    'gemini-3.5-flash-lite',
     'gemini-flash-latest'
 ];
 
@@ -246,16 +288,21 @@ function formatMultiTimezone(date) {
 // Local fallback if AI service is completely unreachable
 function generateLocal48hPreview(gwInfo) {
     const lines = [
-        `🚨 *48-HOUR FPL NOTICE: ${gwInfo.name.toUpperCase()} APPROACHING* 🚨\n`,
+        `🚨 *48-HOUR FPL NOTICE: ${gwInfo.name.toUpperCase()} ON THE HORIZON* 🚨\n`,
         `⚽ *First Match:* ${gwInfo.firstMatch}`,
         `⏰ *Kickoff:* ${formatMultiTimezone(gwInfo.firstKickoff)}`,
         `⏳ *FPL Team Lock Deadline:* ${formatMultiTimezone(gwInfo.deadline)}\n`,
+        `📜 *THE 48-HOUR ODE:*\n` +
+        `_Two days to ponder, two days to scheme,_\n` +
+        `_To rip up your bench or stay with the dream._\n` +
+        `_Will you hold your knees steady or take a mad hit?_\n` +
+        `_Sunday will tell if you’re genius or... not quite fit!_\n`,
         `*MATCH SCHEDULE:*`
     ];
     gwInfo.fixtures.forEach(f => {
         lines.push(`• ⚽ *${f.home}* vs *${f.away}* - ${formatMultiTimezone(f.kickoff)}`);
     });
-    lines.push(`\nDon't forget to review your squad and confirm captaincy picks!`);
+    lines.push(`\n🎭 *EARLY PUNDIT BANTER:* To the managers already itching to rage-transfer at 2 AM—step away from the app! Check press conferences first, guard your free transfer like gold, and start scheming your *Captain (C)* armband!`);
     return lines.join('\n');
 }
 
@@ -264,12 +311,23 @@ function generateLocal24hAlert(gwInfo) {
            `⚽ *Opening Match:* ${gwInfo.firstMatch}\n` +
            `⏰ *Kickoff:* ${formatMultiTimezone(gwInfo.firstKickoff)}\n` +
            `🔒 *OFFICIAL FPL DEADLINE:* ${formatMultiTimezone(gwInfo.deadline)} (Team lock happens 90 mins before kickoff!)\n\n` +
-           `*FINAL MANAGER CHECKLIST:*\n` +
-           `• [ ] Vice-captain confirmed?\n` +
-           `• [ ] Starting XI locked?\n` +
-           `• [ ] Bench order prioritized?\n` +
-           `• [ ] Checked latest press conference injury news?\n\n` +
-           `Lock in your teams before the servers get busy!`;
+           `📜 *THE PRE-DEADLINE BALLAD:*\n` +
+           `_A deadline forgotten, a captain unpinned,_\n` +
+           `_Your fifteen-point hero left out in the wind._\n` +
+           `_The green arrows beckon, the red arrows loom,_\n` +
+           `_One careless misclick spells mini-league doom!_\n\n` +
+           `🎯 *CAPTAINCY DECISION MATRIX:*\n` +
+           `• 🛡️ *The Sensible Shield (The Safe Armband):* Back your verified high-ownership talisman so you can sleep peacefully tonight.\n` +
+           `• ⚔️ *The Madman's Dagger (The Differential Punt):* Sub-15% owned wildcard for the reckless souls chasing glorious redemption!\n` +
+           `• 🦺 *The Vice-Captain Lifejacket:* Put that VC armband on someone guaranteed 90 minutes. Tactical benchings are real!\n\n` +
+           `📋 *FINAL MANAGER CHECKLIST (NO EXCUSES):*\n` +
+           `• [ ] *CAPTAIN (C) LOCKED:* Double-check the armband! Did you actually pin it on your talisman, or did you leave it on your 4.0m backup keeper?!\n` +
+           `• [ ] *VICE-CAPTAIN (VC) CONFIRMED:* Insurance secured! Because warm-up tweaks happen, and crying in the group chat scores 0 points.\n` +
+           `• [ ] *STARTING XI LOCKED:* No red or yellow-flagged ghosts haunting your starting 11.\n` +
+           `• [ ] *BENCH ORDER PRIORITIZED:* Left-to-right! Your #1 sub is your savior, #3 is where hauls go to die.\n` +
+           `• [ ] *PRESS CONFERENCES CHECKED:* Don't get bamboozled by cryptic press conference mind games.\n` +
+           `• [ ] *KNEE-JERK HIT REGRET CHECK:* Did you take a -4 or -8? Own your chaos and pray for a brace!\n\n` +
+           `🏃‍♂️ Lock in your squads before the FPL servers melt down!`;
 }
 
 // Generate 48-Hour Fixture Preview via Gemini
@@ -281,34 +339,49 @@ async function generate48hPreview(gwInfo) {
         `• ⚽ *${f.home}* vs *${f.away}* - ${formatMultiTimezone(f.kickoff)}`
     ).join('\n');
 
-    const prompt = `You are an elite Premier League and Fantasy Premier League (FPL) broadcast host.
+    const prompt = `You are an elite Premier League and Fantasy Premier League (FPL) broadcast host with razor-sharp wit, poetic humor, and playful teasing banter towards mini-league managers.
 Today is 48 HOURS before the kickoff of ${gwInfo.name}.
 Opening Match: ${gwInfo.firstMatch} (Kickoff: ${kickoffFormatted}).
 FPL Team Selection Deadline: ${deadlineFormatted} (90 mins before kickoff).
 
-OFFICIAL VERIFIED GAMEWEEK FIXTURES (DO NOT CHANGE OR INVENT MATCHES):
+VERIFIED OFFICIAL LIVE GAMEWEEK FIXTURES (DO NOT CHANGE OR INVENT MATCHES):
 ${fixtureListText}
 
-OFFICIAL LIVE FPL STATS & MARKET TRENDS:
-Top In-Form Players:
+VERIFIED OFFICIAL LIVE FPL STATS & MARKET TRENDS (DIRECTLY FROM PREMIER LEAGUE):
+Top In-Form Players (Current Season Form):
 ${gwInfo.topForm || 'N/A'}
 
-Most Transferred-In Players This Week:
+Top Transferred-In Players This Round:
 ${gwInfo.topTransferredIn || 'N/A'}
 
-Official Club Injury Flags & News:
+Most Transferred-Out Players This Round (The Sell-Off):
+${gwInfo.topTransferredOut || 'N/A'}
+
+The Template Herd (Highest Owned Active Players):
+${gwInfo.topOwned || 'N/A'}
+
+Verified Differential Gems (<15% Ownership High Upside):
+${gwInfo.topDifferentials || 'N/A'}
+
+Official Club Injury Flags & Press Conference News:
 ${gwInfo.injuries || 'No major flags'}
 
 CRITICAL FPL CONTENT REQUIREMENTS:
-1. High-energy WhatsApp broadcast focusing 100% on FPL PLAYERS, transfers, form, goals, clean sheets, and captaincy picks.
-2. ABSOLUTE RULE: DO NOT mention managers or head coaches under any circumstances (managers score 0 FPL points). Focus entirely on active players.
-3. ABSOLUTE BAN: Under NO circumstances mention Erik ten Hag, Jürgen Klopp, or Mauricio Pochettino. They are not in the Premier League.
-4. List all the official match pairings provided above with their multi-timezone kickoff times.
-5. Highlight 2 big blockbuster clashes from an FPL perspective (attacking firepower vs leaky defenses).
-6. Discuss the top in-form players and transfer frenzy from the official live FPL data above.
-7. Emphasize the FPL team lock deadline (${deadlineFormatted}).
-8. Concluding tip to review squad, check injury flags, and plan transfers early.
-9. CRITICAL FORMATTING: Use single asterisks (*bold*) for WhatsApp bolding. Never use double asterisks (**). Do not use markdown # headers. Only list the actual matches provided above.`;
+1. High-energy WhatsApp broadcast focusing 100% on active FPL PLAYERS, transfers, form, goals, clean sheets, and captaincy picks.
+2. ABSOLUTE GROUNDING MANDATE: Every player name, club, ownership %, and statistic MUST be taken directly from the verified live lists provided above. DO NOT use stale data from past seasons.
+3. ABSOLUTE RULE: DO NOT mention managers or head coaches under any circumstances (managers score 0 FPL points). Focus entirely on active players.
+4. ABSOLUTE BAN: Under NO circumstances mention Erik ten Hag, Jürgen Klopp, or Mauricio Pochettino. They are not in the Premier League.
+5. WITTY POETIC PROLOGUE: Include a clever, funny 2-to-4 line rhyming verse about FPL obsession, managers sweating their free transfers, or fighting the urge to knee-jerk.
+6. PLAYFUL TEASING & BANTER:
+   - Tease the template clones who copy whatever the top influencers do.
+   - Gently roast managers itching to take -4 hits on a Thursday night before press conferences.
+   - Banter about leaving 15 points on the bench.
+7. List all the official match pairings provided above with their multi-timezone kickoff times.
+8. Highlight 2 big blockbuster clashes from an FPL perspective (attacking firepower vs leaky defenses).
+9. Discuss the top in-form players and transfer frenzy from the official live FPL data above.
+10. Early Captaincy Radar: Remind managers to start planning both their Captain (C) and Vice-Captain (VC).
+11. Emphasize the FPL team lock deadline (${deadlineFormatted}).
+12. CRITICAL FORMATTING: Use single asterisks (*bold*) for WhatsApp bolding. Never use double asterisks (**). Do not use markdown # headers. Only list the actual matches provided above.`;
 
     const aiText = await callGeminiWithFallback(prompt, true);
     return aiText || generateLocal48hPreview(gwInfo);
@@ -323,41 +396,60 @@ async function generate24hDeadlineAlert(gwInfo) {
         `• ⚽ *${f.home}* vs *${f.away}* - ${formatMultiTimezone(f.kickoff)}`
     ).join('\n');
 
-    const prompt = `You are an elite Premier League and Fantasy Premier League (FPL) analyst.
+    const prompt = `You are an elite Premier League and Fantasy Premier League (FPL) analyst celebrated for your razor-sharp tactical insight, witty poetic humor, and hilarious teasing banter aimed directly at mini-league managers.
 Today is exactly 24 HOURS before the kickoff of ${gwInfo.name}!
 Opening match: ${gwInfo.firstMatch} (Kickoff: ${kickoffFormatted}).
 THE OFFICIAL FPL DEADLINE IS: ${deadlineFormatted} (Team lock happens 90 minutes before kickoff).
 
-OFFICIAL VERIFIED GAMEWEEK FIXTURES:
+VERIFIED OFFICIAL LIVE GAMEWEEK FIXTURES (DO NOT INVENT OR ALTER MATCHES):
 ${fixtureListText}
 
-OFFICIAL LIVE FPL STATS & MARKET TRENDS:
-Top In-Form Players:
+VERIFIED OFFICIAL LIVE FPL STATS & MARKET TRENDS (DIRECTLY FROM PREMIER LEAGUE):
+Top In-Form Players (Current Season Form):
 ${gwInfo.topForm || 'N/A'}
 
-Top Transferred-In Players:
+Top Transferred-In Players This Round:
 ${gwInfo.topTransferredIn || 'N/A'}
 
-Official Club Injury Flags:
+Most Transferred-Out Players This Round (The Sell-Off):
+${gwInfo.topTransferredOut || 'N/A'}
+
+The Template Herd (Highest Owned Active Players):
+${gwInfo.topOwned || 'N/A'}
+
+Verified Differential Gems (<15% Ownership High Upside):
+${gwInfo.topDifferentials || 'N/A'}
+
+Official Club Injury Flags & Press Conference News:
 ${gwInfo.injuries || 'None'}
 
 CRITICAL FPL CONTENT REQUIREMENTS:
 1. Urgent Headline: ⏳ *FINAL 24-HOUR DEADLINE ALERT: ${gwInfo.name.toUpperCase()}* ⏳
-2. Prominently display the EXACT FPL DEADLINE (${deadlineFormatted}).
-3. ABSOLUTE RULE: DO NOT mention managers or head coaches (managers score 0 FPL points). Focus 100% on the active players.
-4. ABSOLUTE BAN: Never mention Erik ten Hag, Jürgen Klopp, or Mauricio Pochettino.
-5. "Captaincy Decision Matrix":
-   - Safe Essential Pick (highest expected returns based on current in-form players and matchups)
-   - Differential Captain Pick (<15% ownership) with high upside
-6. Top 3 Transfer Trends & Key Matchups for this round from the official live FPL data provided above.
-7. Key injury warnings from the official injury list above.
-8. Final Manager Checklist:
-   - [ ] Vice-captain confirmed?
-   - [ ] Bench order prioritized?
-   - [ ] Injury flags & press conference news checked?
-   - [ ] Starting XI locked?
-9. High energy closing call: "Lock in your teams before the servers get busy!"
-10. CRITICAL: Use single asterisks (*bold*) for WhatsApp. Never use double asterisks (**). No markdown # headers.`;
+2. Prominently display the EXACT FPL DEADLINE (${deadlineFormatted}). Warn that last-minute server crashes wait for no one.
+3. ABSOLUTE GROUNDING MANDATE: Every player name, club, ownership %, and statistic MUST be taken directly from the verified live lists provided above. DO NOT use stale data from previous seasons.
+4. ABSOLUTE RULE: DO NOT mention managers or head coaches (managers score 0 FPL points). Focus 100% on active players.
+5. ABSOLUTE BAN: Under NO circumstances mention Erik ten Hag, Jürgen Klopp, or Mauricio Pochettino.
+6. WITTY POETIC ODE (2-4 lines of clever, rhyming verse poking fun at the tragedy of bench points, blanking captains, or mini-league rivalry).
+7. PLAYFUL TEASING & ROASTING:
+   - Roast the template merchants whose entire team is copied from Reddit or Twitter/X.
+   - Call out the desperate 2 AM knee-jerkers sitting on -8 hits.
+   - Tease the differential hipsters betting their weekend on a 1.5% owned gamble.
+   - Remind everyone that the player sitting on their 1st bench spot is statistically guaranteed to haul.
+8. "Captaincy Decision Matrix":
+   - 🛡️ *The Sensible Shield (Safe Pick):* High-ownership, high-floor talisman chosen strictly from the Top In-Form or Template lists above for managers who value sleep and sanity.
+   - ⚔️ *The Madman's Dagger (Differential Punt):* Sub-15% ownership high-upside pick chosen strictly from the Verified Differential Gems list above.
+   - 🦺 *The Vice-Captain Lifejacket:* Why your VC choice is critical insurance against late rotation heartbreak.
+9. Top 3 Transfer Trends & Key Matchups for this round from the official live FPL data provided above.
+10. Key injury warnings from the official injury list above (calling out suspicious 75% orange flags).
+11. *FINAL MANAGER CHECKLIST (CRITICAL: MUST INCLUDE BOTH CAPTAIN AND VICE-CAPTAIN WITH BANTER!)*:
+   - [ ] *CAPTAIN (C) LOCKED:* Double-check the armband! Did you actually confirm it on your star talisman, or did you leave it on your 4.0m bench fodder?
+   - [ ] *VICE-CAPTAIN (VC) CONFIRMED:* Insurance secured! Because unexpected benchings happen, and tears don't generate FPL points.
+   - [ ] *STARTING XI LOCKED:* Ensure no red-flagged injured players are chilling in your starting lineup.
+   - [ ] *BENCH ORDER PRIORITIZED:* Left-to-right! Your #1 sub is your hero; don't leave your highest ceiling player in slot 3!
+   - [ ] *PRESS CONFERENCES CHECKED:* Verified late team news?
+   - [ ] *KNEE-JERK HIT REGRET CHECK:* Reconciled with any -4 or -8 point deductions?
+12. High energy closing call: "Lock in your teams before the servers melt!"
+13. CRITICAL FORMATTING: Use single asterisks (*bold*) for WhatsApp bolding. Never use double asterisks (**). Do not use markdown # headers. Only list the actual matches provided above.`;
 
     const aiText = await callGeminiWithFallback(prompt, true);
     return aiText || generateLocal24hAlert(gwInfo);
