@@ -44,6 +44,64 @@ Client.prototype.inject = async function() {
     }
 };
 
+// Helper to guarantee window.WWebJS and getChat are always present in the browser page
+async function ensureWWebJS(clientInstance) {
+    const page = clientInstance.pupPage;
+    if (!page || page.isClosed()) return false;
+    try {
+        const hasWWebJS = await page.evaluate(() => {
+            return typeof window !== 'undefined' && typeof window.WWebJS !== 'undefined' && typeof window.WWebJS.getChat === 'function';
+        }).catch(() => false);
+
+        if (!hasWWebJS) {
+            console.log('🔄 window.WWebJS missing or wiped by page reload. Re-injecting utilities...');
+            const { LoadUtils } = require('whatsapp-web.js/src/util/Injected/Utils');
+            await page.evaluate(LoadUtils);
+            console.log('✅ WWebJS re-injected successfully.');
+        }
+        return true;
+    } catch (e) {
+        console.warn('⚠️ WWebJS verification warning:', e.message);
+        return false;
+    }
+}
+
+// Resilient patch for sendMessage to eliminate "Cannot read properties of undefined (reading 'getChat')"
+const originalSendMessage = Client.prototype.sendMessage;
+Client.prototype.sendMessage = async function(chatId, content, options = {}) {
+    let lastError;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+        await ensureWWebJS(this);
+        try {
+            return await originalSendMessage.call(this, chatId, content, options);
+        } catch (err) {
+            lastError = err;
+            const msg = String(err.message || err);
+            console.warn(`[Send Attempt ${attempt}/3] Error sending to ${chatId}: ${msg}`);
+            if (msg.includes('getChat') || msg.includes('Execution context') || msg.includes('Navigation') || msg.includes('Session closed')) {
+                console.log('WhatsApp Web context refreshing. Re-injecting and retrying in 2s...');
+                await new Promise(r => setTimeout(r, 2000));
+                try {
+                    const { LoadUtils } = require('whatsapp-web.js/src/util/Injected/Utils');
+                    if (this.pupPage && !this.pupPage.isClosed()) {
+                        await this.pupPage.evaluate(LoadUtils);
+                    }
+                } catch (_) {}
+                continue;
+            }
+            throw err;
+        }
+    }
+    throw lastError;
+};
+
+// Resilient patch for getChats to eliminate missing WWebJS errors
+const originalGetChats = Client.prototype.getChats;
+Client.prototype.getChats = async function() {
+    await ensureWWebJS(this);
+    return originalGetChats.call(this);
+};
+
 // Verify API Key
 const geminiApiKey = process.env.GEMINI_API_KEY;
 if (!geminiApiKey) {
@@ -528,6 +586,10 @@ async function checkAndSendSmartReminders(forcedType = null) {
                     console.log(`Successfully sent 48h alert for ${gwInfo.name}!`);
                 } catch (err) {
                     console.error(`Failed to send 48h alert:`, err.message);
+                    if (err.message && err.message.includes('getChat')) {
+                        console.log('WhatsApp Web browser session stalled. Triggering PM2 auto-restart to refresh session...');
+                        process.exit(1);
+                    }
                 }
             } else {
                 console.log(`[Tracker] 48h alert already delivered for ${gwInfo.name}.`);
@@ -546,6 +608,10 @@ async function checkAndSendSmartReminders(forcedType = null) {
                     console.log(`Successfully sent 24h deadline alert for ${gwInfo.name}!`);
                 } catch (err) {
                     console.error(`Failed to send 24h deadline alert:`, err.message);
+                    if (err.message && err.message.includes('getChat')) {
+                        console.log('WhatsApp Web browser session stalled. Triggering PM2 auto-restart to refresh session...');
+                        process.exit(1);
+                    }
                 }
             } else {
                 console.log(`[Tracker] 24h deadline alert already delivered for ${gwInfo.name}.`);
@@ -592,6 +658,9 @@ client.on('ready', async () => {
     console.log('- 48-Hour Alert: Triggers 48h before the first kickoff of every Gameweek.');
     console.log('- 24-Hour Alert: Triggers 24h before the first kickoff of every Gameweek.');
     console.log('- Routine check runs every 15 minutes.');
+
+    // 4-second settle delay to let WhatsApp Web finish initial React DOM hydration and chat store sync
+    await new Promise(r => setTimeout(r, 4000));
 
     // Run check immediately on startup
     await checkAndSendSmartReminders();
